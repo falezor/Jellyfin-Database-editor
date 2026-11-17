@@ -1,43 +1,43 @@
 # Jellyfin DB editor
 
-Lokalna przeglądarka i czyszczarka bazy `jellyfin.db` Jellyfina. Działa w przeglądarce, ale wszystkie operacje wykonuje lokalny serwer — oryginalna baza i pliki mediów pozostają nietknięte aż do świadomego **Upload** lub **Revert**.
+A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
 
-## Co potrafi
+## Features
 
-- przeglądanie bibliotek, typów, seriali i filmów, wyszukiwanie i filtrowanie po dyskach,
-- wykrywanie brakujących plików, odmontowanych lub odłączonych dysków, duplikatów, osieroconych wpisów i sierot w tabelach powiązanych,
-- bezpieczne usuwanie wpisów w kopii roboczej, z blokadą dla niedostępnych dysków,
-- **Upload** i **Revert** z kopią zapasową, historią wersji i walidacją schematu,
-- import/eksport SQL, eksport całej bazy `.db` i ręczny skrypt SQL,
-- interfejs w **8 językach**, tryb portable i obsługa Linux/Windows (macOS nietestowany).
+- browse libraries, item types, series and movies, with search and per-disk filtering,
+- detect missing files, unmounted or detached disks, duplicates, orphaned items and orphaned rows in related tables,
+- safely delete items from a working copy, with protection for unavailable disks,
+- **Upload** and **Revert** with a backup, version history and schema validation,
+- import/export SQL, export the full database as `.db`, and generate a manual SQL cleanup script,
+- **8 interface languages**, portable configuration, Linux and Windows support (macOS untested).
 
-## Bezpieczeństwo
+## Safety
 
-- oryginał jest zmieniany wyłącznie przez **Upload** lub **Revert**,
-- usuwanie odbywa się na kopii roboczej w `<data_dir>/tmp`, kasowanej po zamknięciu,
-- backup przed Uploadem jest robiony z żywego pliku, a nowa baza przechodzi `quick_check`,
-- serwer słucha lokalnie, wymaga tokenu i waliduje nagłówek `Host`.
+- the original database is only changed by **Upload** or **Revert**,
+- deletions happen on a working copy in `<data_dir>/tmp`, removed when the program exits,
+- the pre-Upload backup is taken from the live file, and the new database passes `quick_check`,
+- the server listens locally, requires a token and validates the `Host` header.
 
-## Wymagania
+## Requirements
 
-- Python 3 (tylko biblioteka standardowa),
-- przeglądarka graficzna,
-- baza Jellyfina 10.10+ (schemat EF Core).
+- Python 3 (standard library only),
+- a graphical browser,
+- Jellyfin 10.10+ database schema (EF Core era).
 
-## Szybki start
+## Quick start
 
 ```bash
 python3 jf_browser.py
 # http://127.0.0.1:8099
 ```
 
-Opcjonalnie: `python3 jf_browser.py --db /ścieżka/do/jellyfin.db`. Przy pierwszym uruchomieniu kreator wybierze folder danych i bazę.
+Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the setup wizard asks for a data folder and a database.
 
-## Dokumentacja
+## Documentation
 
-- **[README-extensive.md](README-extensive.md)** — pełny opis funkcji, ustawień, API i ograniczeń.
-- `jf_browser_dokumentacja.md` — dokumentacja techniczna projektu.
+- **[README-extensive.md](README-extensive.md)** — full feature, configuration, API and limitations documentation.
+- `jf_browser_dokumentacja.md` — internal technical documentation (Polish).
 
-## Licencja
+## License
 
-MIT — szczegóły w [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
