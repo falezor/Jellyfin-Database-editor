@@ -1,0 +1,5 @@
+* text=auto
+
+# skrypt docelowo działa na Ubuntu - wymuszamy LF
+*.py   text eol=lf
+*.md   text eol=lf

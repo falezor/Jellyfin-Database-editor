@@ -1,0 +1,21 @@
+# przykładowe/testowe bazy danych
+DB/
+
+# kopie robocze programu (zawierają hashe haseł)
+tmp/
+
+# historia uploadów (kopie baz)
+history/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# reczne kopie zapasowe
+backups/
+
+# konfiguracja portable
+jf_browser.settings.json
+
+# katalog publikacji GitHub (osobne repo)
+github/
