@@ -2721,8 +2721,29 @@ def _set_lang(headers):
     set_lang(headers.get('X-Lang'))
 
 
+TOKEN_COOKIE = 'jfb_token'
+
+
+def cookie_authorized(h):
+    """Czy żądanie ma ciasteczko sesji ustawione przez stronę programu."""
+    for part in (h.headers.get('Cookie') or '').split(';'):
+        name, _, value = part.strip().partition('=')
+        if name == TOKEN_COOKIE and value == CFG['token']:
+            return True
+    return False
+
+
+def get_authorized(h, params):
+    """GET-y API i obrazów: token z nagłówka/pola t albo ciasteczko sesji."""
+    if h.headers.get('X-Token') == CFG['token']:
+        return True
+    if (params.get('t') or [''])[0] == CFG['token']:
+        return True
+    return cookie_authorized(h)
+
+
 def host_ok(value):
-    """Dozwolone Host: localhost, adresy IP (LAN) i dokładnie --host. Blokuje domeny (DNS rebinding)."""
+    """Dozwolone Host: localhost, własny --host i (tylko dla wildcardu) dowolny IP. Blokuje domeny."""
     h = (value or '').strip()
     if not h:
         return False
@@ -2736,13 +2757,16 @@ def host_ok(value):
     host = host.lower().rstrip('.')
     if host in ('localhost', '127.0.0.1', '::1'):
         return True
-    if host == (CFG.get('own_host') or '').lower():
+    own = (CFG.get('own_host') or '').lower()
+    if host == own:
         return True
     try:
         ipaddress.ip_address(host)
-        return True
     except ValueError:
         return False
+    # 0.0.0.0 / :: celowo wystawiają panel w LAN; przy konkretnym --host
+    # akceptujemy tylko ten adres (plus localhost wyżej).
+    return own in ('0.0.0.0', '::')
 
 
 def page_html():
@@ -2891,6 +2915,9 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         p = parse_qs(u.query)
         try:
+            if u.path != '/' and (u.path.startswith('/api/') or u.path == '/img') and not get_authorized(self, p):
+                self.send_json({'error': tr('e_bad_token')}, 403)
+                return
             if STATE['con'] is None and u.path not in NODB_OK:
                 self.send_json({'error': tr('e_no_db'), 'nodb': True, 'loading': STATE.get('loading', False)}, 409)
                 return
@@ -2899,6 +2926,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Content-Length', str(len(data)))
+                self.send_header('Set-Cookie', f'{TOKEN_COOKIE}={CFG["token"]}; Path=/; HttpOnly; SameSite=Strict')
+                self.send_header('X-Frame-Options', 'DENY')
+                self.send_header('Content-Security-Policy', "frame-ancestors 'none'")
+                self.send_header('Referrer-Policy', 'no-referrer')
+                self.send_header('Cache-Control', 'no-store')
                 self.end_headers()
                 self.wfile.write(data)
             elif u.path == '/api/info':
@@ -2933,15 +2965,9 @@ class Handler(BaseHTTPRequestHandler):
                 sv = svc_detect()
                 self.send_json({'kind': sv['kind'], 'name': sv['name'], 'source': sv['source']})
             elif u.path == '/api/export':
-                if p.get('t', [''])[0] != CFG['token']:
-                    self.send_json({'error': tr('e_bad_token')}, 403)
-                else:
-                    serve_export(self)
+                serve_export(self)
             elif u.path == '/api/export-sql':
-                if p.get('t', [''])[0] != CFG['token']:
-                    self.send_json({'error': tr('e_bad_token')}, 403)
-                else:
-                    serve_export_sql(self, p)
+                serve_export_sql(self, p)
             elif u.path == '/api/sqljob':
                 self.send_json(STATE.get('sqljob') or {})
             elif u.path == '/api/job':
@@ -3150,6 +3176,13 @@ def main():
     ap.add_argument('--no-service-check', action='store_true',
                     help='nie blokuj Upload, gdy Jellyfin działa')
     a = ap.parse_args()
+    try:
+        _loopback = ipaddress.ip_address(a.host).is_loopback
+    except ValueError:
+        _loopback = a.host.lower() == 'localhost'
+    if not _loopback:
+        print(f'UWAGA: --host {a.host} wystawia panel poza localhost. '
+              'Każdy, kto ma dostęp sieciowy do tego adresu, może otworzyć interfejs i zarządzać bazą.')
     STATE['dialog'] = dialog_available()
     try:
         html_template()

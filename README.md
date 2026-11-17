@@ -16,7 +16,7 @@ A local, browser-based(working on native) viewer and cleaner for Jellyfin's `jel
 - the original database is only changed by **Upload** or **Revert**,
 - deletions happen on a working copy in `<data_dir>/tmp`, removed when the program exits,
 - the pre-Upload backup is taken from the live file, and the new database passes `quick_check`,
-- the server listens locally, requires a token and validates the `Host` header.
+- the server listens locally, validates the `Host` header and protects API/image reads with a session cookie or token.
 
 ## Requirements
 

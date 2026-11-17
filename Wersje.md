@@ -1,14 +1,23 @@
 # Historia wersji — Jellyfin DB editor
 
 Schemat: **X.Y.Z** — `X` przełom, `Y` duża zmiana funkcjonalna, `Z` poprawka.
-Każda wersja ma tag `vX.Y.Z`; tagi są niezmienne, commity nie są usuwane.
+Każda wersja ma tag `vX.Y.Z` oraz release GitHub z ZIP-em; tagi są niezmienne, commity nie są usuwane.
+ZIP release zawiera program, UI, README/licencję i changelogi — bez `DB/`, `potencjalne poprawki` i danych runtime. `v1.6.31` pozostaje pełnym ZIP-em (legacy).
+English translation: [`Versions.md`](Versions.md).
 
 ## 1.6.x
+
+### 1.6.31 (2026-11-17)
+- **GET-y wymagają sesji:** `/api/*` i `/img` przyjmują ciasteczko `jfb_token` (HttpOnly, SameSite=Strict) ustawiane przez `/`, nagłówek `X-Token` lub pole `t`; cross-site `<img>` nie ma dostępu.
+- **Nagłówki bezpieczeństwa strony:** `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
+- **Host:** dowolny literał IP dozwolony tylko przy `--host 0.0.0.0`/`::`; przy konkretnym adresie tylko on i localhost. Ostrzeżenie przy `--host` poza localhost.
+- Release `v1.6.31` z ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
 
 ### 1.6.30 (2026-11-17)
 - **Paginacja bez sufitu 20 000:** `/api/list` przyjmuje `offset`; „Pokaż więcej" doładowuje kolejne 2000 wierszy aż do końca (strona maks. 5000). Test na kopii z 46 625 wpisami — `offset=20000` i `30000` zwracają dalsze pozycje.
 - Sortowanie problemów nadal analizuje wszystkie pasujące wiersze (może być wolniejsze na bardzo dużych bibliotekach), ale nic nie jest obcinane do 20k.
-- Dodano publiczne `README.md` i `README-extensive.md` (English) oraz licencję MIT.
+- Dodano publiczne `README.md`, `README-extensive.md`, `Versions.md` (English) oraz licencję MIT.
 - Aktualizacja dokumentacji: powyższe zmiany.
 
 ### 1.6.29 (2026-11-17)
@@ -141,7 +150,7 @@ Każda wersja ma tag `vX.Y.Z`; tagi są niezmienne, commity nie są usuwane.
 - Poprawka kolizji klucza tłumaczenia `backup_note` → `backup_manual_note` (podpowiedź przycisku Backup w Historii pokazywała opis pliku `.bak` z Uploadu).
 
 ### 1.6.3 (2026-11-16)
-- Dokumentacja 1.6.2 + nowy plik `wersje.md` (historia zmian pogrupowana po wersjach).
+- Dokumentacja 1.6.2 + nowy plik `Wersje.md` (historia zmian pogrupowana po wersjach).
 
 ### 1.6.2 (2026-11-16)
 - **Backup w Historii**: dopisek i podpowiedź, że kopie z przycisku Backup nie są usuwane automatycznie i nie liczą się do limitu historii.

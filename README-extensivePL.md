@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 17 listopada 2026, **wersja 1.6.30** (tag `v1.6.30`, lokalne repo git).
+Stan na 17 listopada 2026, **wersja 1.6.31** (tag `v1.6.31`, lokalne repo git).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -48,7 +48,7 @@ Bez uprawnień do bazy program startuje mimo to (ekran konfiguracji/„Nie wczyt
 | Flaga | Domyślnie | Znaczenie |
 |---|---|---|
 | `--db` | automatycznie | ścieżka bazy: podana → `db_path` z configu → wykryta domyślna → domyślna platformy; ścieżka w formacie innego systemu jest pomijana (z ostrzeżeniem w konsoli) i używana jest domyślna platformy |
-| `--host` | `127.0.0.1` | adres serwera lokalnego |
+| `--host` | `127.0.0.1` | adres serwera lokalnego; wartość spoza localhost wystawia panel na sieć i wypisuje ostrzeżenie |
 | `--port` | `8099` | port; zajęty → kolejne (do +9) |
 | `--no-browser` | wyłączone | nie otwieraj przeglądarki |
 | `--jf-service` | wykrywane | `systemd:nazwa` albo `docker:nazwa_kontenera` |
@@ -105,8 +105,11 @@ Ustawienia (`jf_port`, `jf_service`, `history_max`, `data_dir`, `db_path`, `disk
 Zabezpieczenia:
 
 - serwer słucha tylko na `127.0.0.1`,
-- **walidacja nagłówka `Host`**: dozwolone są `localhost`, adresy IP (także LAN) i dokładnie wartość `--host`; domeny są odrzucane (ochrona przed DNS rebinding),
+- **walidacja nagłówka `Host`**: dozwolone są `localhost`, dokładnie wartość `--host`, a dowolny literał IP tylko przy `--host 0.0.0.0`/`::`; domeny są odrzucane (ochrona przed DNS rebinding),
 - losowy token (16 bajtów hex) wstawiany do strony; POST wymaga `X-Token`, a eksport idzie przez formularz POST z polem `t` (GET `?t=` zostaje dla zgodności),
+- **GET-y API i `/img` wymagają sesji**: ciasteczko `jfb_token` ustawiane przez `/` (HttpOnly, SameSite=Strict), nagłówek `X-Token` albo pole `t`; cross-site `<img>` nie ma dostępu,
+- strona jest wysyłana z `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer` i `Cache-Control: no-store`,
+- przy `--host` poza localhost program wypisuje ostrzeżenie, że panel będzie dostępny w sieci,
 - **blokada usuwania z niedostępnego dysku** (patrz sekcja 8),
 - przed Upload sprawdzenie, czy Jellyfin nie działa,
 - `PRAGMA quick_check` nowej bazy przed podmianą,
@@ -250,6 +253,8 @@ Na **Windows** tryb ADMIN nie istnieje: `GET /api/priv` zwraca `platform:"window
 
 ## 13. API HTTP (lokalne)
 
+GET-y `/api/*` i `/img` wymagają ciasteczka sesji ustawianego przez `/` (HttpOnly, SameSite=Strict), nagłówka `X-Token` albo pola `t`. POST-y wymagają `X-Token` (poza formularzami eksportu).
+
 | Trasa | Metoda | Token | Opis |
 |---|---|---|---|
 | `/` | GET | – | interfejs (token wstawiany do strony) |
@@ -356,4 +361,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — przełom, `Y` — duża zmiana funkcjonalna, `Z` — poprawka/rozszerzenie (także powyżej 10: 1.6.25). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Historia: `v1.1.0` → `v1.6.30`; pełna lista w `wersje.md`. Wersję `1.7.0` rezerwujemy na duże zmiany (np. pakowanie AppImage).
+Schemat **X.Y.Z**: `X` — przełom, `Y` — duża zmiana funkcjonalna, `Z` — poprawka/rozszerzenie (także powyżej 10: 1.6.25). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.6.31`; pełna lista w `Wersje.md`. Wersję `1.7.0` rezerwujemy na duże zmiany (np. pakowanie AppImage).

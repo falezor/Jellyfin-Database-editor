@@ -1,16 +1,24 @@
 # Version history — Jellyfin DB editor
 
-English translation of [`wersje.md`](wersje.md) (Polish source of truth).
+English translation of [`Wersje.md`](Wersje.md) (Polish source of truth).
 
 Scheme: **X.Y.Z** — `X` milestone, `Y` major feature, `Z` fix.
-Every version has a `vX.Y.Z` tag; tags are immutable, commits are never deleted.
+Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; tags are immutable, commits are never deleted.
+Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`, internal analysis or runtime data. `v1.6.31` remains a full ZIP (legacy).
 
 ## 1.6.x
+
+### 1.6.31 (2026-11-17)
+- **GETs require a session:** `/api/*` and `/img` accept the `jfb_token` cookie (HttpOnly, SameSite=Strict) set by `/`, the `X-Token` header or a `t` field; cross-site `<img>` requests are rejected.
+- **Page security headers:** `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
+- **Host:** any IP literal is allowed only with `--host 0.0.0.0`/`::`; with a specific address only it and localhost. Warning when `--host` is outside localhost.
+- `v1.6.31` GitHub release with a ZIP asset.
+- Documentation update: the changes above.
 
 ### 1.6.30 (2026-11-17)
 - **Pagination without the 20,000 cap:** `/api/list` accepts `offset`; **Load more** fetches another 2000 rows until the end (max 5000 per page). Tested on a copy with 46,625 items — `offset=20000` and `30000` return further items.
 - Problem sorting still analyses all matching rows (it may be slower on very large libraries), but nothing is truncated at 20k.
-- Added public `README.md`, `README-extensive.md` and `versions.md` (English) and the MIT license.
+- Added public `README.md`, `README-extensive.md` and `Versions.md` (English) and the MIT license.
 - Documentation update: the changes above.
 
 ### 1.6.29 (2026-11-17)
@@ -143,7 +151,7 @@ Every version has a `vX.Y.Z` tag; tags are immutable, commits are never deleted.
 - Fixed a translation key collision `backup_note` → `backup_manual_note` (the Backup button tooltip in History showed the description of the Upload `.bak` file).
 
 ### 1.6.3 (2026-11-16)
-- Documentation for 1.6.2 + new `wersje.md` file (changelog grouped by version).
+- Documentation for 1.6.2 + new `Wersje.md` file (changelog grouped by version).
 
 ### 1.6.2 (2026-11-16)
 - **Backup in History**: a note and tooltip explaining that backups created with the Backup button are not removed automatically and do not count towards the history limit.

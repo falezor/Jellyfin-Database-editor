@@ -1,7 +1,7 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 1.6.30 (2026-11-17)  
-This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md).
+**Version:** 1.6.31 (2026-11-17)  
+This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish source: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
 
 ---
 
@@ -42,7 +42,9 @@ Additional safeguards:
 - the new database must pass `PRAGMA quick_check`,
 - tables in the new database are compared with the original; missing tables require confirmation,
 - the optional `.bak` backup is created from the **live file**, not from an old snapshot,
-- the server listens locally, requires a token and validates the `Host` header (DNS rebinding protection).
+- the server listens locally and validates the `Host` header (DNS rebinding protection),
+- GET API endpoints and `/img` require the session cookie set by `/` (HttpOnly, SameSite=Strict), an `X-Token` header or a `t` parameter; cross-site `<img>` requests cannot use the session,
+- the page is served with `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 
 Exports and history copies contain the **entire database**, including accounts and password hashes. Do not share them publicly.
 
@@ -341,7 +343,7 @@ The SQL window also provides the manual cleanup script (section 9) with Copy and
 | Flag | Default | Meaning |
 |---|---|---|
 | `--db` | automatic | database path; order: CLI → config → detected → platform default |
-| `--host` | `127.0.0.1` | local server address |
+| `--host` | `127.0.0.1` | local server address; a non-loopback value exposes the panel on the network and prints a warning |
 | `--port` | `8099` | port; if busy → next one (up to +9) |
 | `--no-browser` | off | do not open the browser |
 | `--jf-service` | detected | `systemd:name` or `docker:container_name` |
@@ -363,7 +365,7 @@ Settings can be changed in the UI (Settings, Setup, Connection, History). The co
 
 ## 14. Local API
 
-The program exposes a local HTTP API used by the interface. Most POST operations require the `X-Token` header (the token is injected into the page).
+The program exposes a local HTTP API used by the interface. GET endpoints and `/img` require the session cookie set by `/` (HttpOnly, SameSite=Strict), an `X-Token` header or a `t` parameter. Most POST operations require the `X-Token` header (the token is injected into the page).
 
 | Route | Method | Description |
 |---|---|---|
@@ -422,9 +424,11 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **1.6.30**.
+- Current version: **1.6.31**.
 - Version scheme: `X.Y.Z`; `X` — milestone, `Y` — major feature, `Z` — fix.
-- Every version has a `vX.Y.Z` tag; changes are listed in [`wersje.md`](wersje.md).
+- Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
+- Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
+- Build a release archive with `python scripts/build_release.py vX.Y.Z`.
 - This document is updated with every release.
 - Next steps: AppImage/EXE packaging, installer, automated tests in the repo, changing the data folder from Settings.
 
