@@ -1,6 +1,6 @@
 # Jellyfin DB editor
 
-A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
+A local, browser-based(working on native) viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
 
 ## Features
 
@@ -22,7 +22,7 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
 
 - Python 3 (standard library only),
 - a graphical browser,
-- Jellyfin 10.10+ database schema (EF Core era).
+- Jellyfin 10.10+ database schema (EF Core era).(might update if jellyfin changes db orientation or smth else happens)
 
 ## Quick start
 
