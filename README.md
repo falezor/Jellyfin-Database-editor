@@ -36,7 +36,7 @@ Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the s
 ## Documentation
 
 - **[README-extensive.md](README-extensive.md)** — full feature, configuration, API and limitations documentation.
-- `jf_browser_dokumentacja.md` — internal technical documentation (Polish).
+- `README-extensivePL.md` — internal technical documentation (Polish).
 
 ## License
 
