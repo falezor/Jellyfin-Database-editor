@@ -1,7 +1,7 @@
 # Jellyfin DB editor — functional documentation
 
 **Version:** 1.6.30 (2026-11-17)  
-This document describes the program from the user's point of view. It is updated with every release. Changelog: [`wersje.md`](wersje.md).
+This document describes the program from the user's point of view. It is updated with every release. Changelog: [`wersje.md`](wersje.md). # change to eng
 
 ---
 
