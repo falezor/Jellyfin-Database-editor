@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 17 listopada 2026, **wersja 1.6.31** (tag `v1.6.31`, lokalne repo git).
+Stan na 18 listopada 2026, **wersja 1.6.32** (tag `v1.6.32`, lokalne repo git).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -361,4 +361,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — przełom, `Y` — duża zmiana funkcjonalna, `Z` — poprawka/rozszerzenie (także powyżej 10: 1.6.25). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.6.31`; pełna lista w `Wersje.md`. Wersję `1.7.0` rezerwujemy na duże zmiany (np. pakowanie AppImage).
+Schemat **X.Y.Z**: `X` — przełom, `Y` — duża zmiana funkcjonalna, `Z` — poprawka/rozszerzenie (także powyżej 10: 1.6.25). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.6.32`; pełna lista w `Wersje.md`. Wersję `1.7.0` rezerwujemy na duże zmiany (np. pakowanie AppImage).

@@ -1,6 +1,6 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 1.6.31 (2026-11-17)  
+**Version:** 1.6.32 (2026-11-18)  
 This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish source: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
 
 ---
@@ -424,7 +424,7 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **1.6.31**.
+- Current version: **1.6.32**.
 - Version scheme: `X.Y.Z`; `X` — milestone, `Y` — major feature, `Z` — fix.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.

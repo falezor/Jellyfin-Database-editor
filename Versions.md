@@ -8,6 +8,12 @@ Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`
 
 ## 1.6.x
 
+### 1.6.32 (2026-11-18)
+- **Automated tests in the repo:** `tests/` using `unittest` — auth/cookie, `Host`, pagination, problems, orphans, delete/upload/backup/history and the lightweight ZIP filter.
+- **GitHub Actions:** Linux + Windows, Python 3.12, `python -m unittest discover -s tests -v`.
+- `v1.6.32` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
 ### 1.6.31 (2026-11-17)
 - **GETs require a session:** `/api/*` and `/img` accept the `jfb_token` cookie (HttpOnly, SameSite=Strict) set by `/`, the `X-Token` header or a `t` field; cross-site `<img>` requests are rejected.
 - **Page security headers:** `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.

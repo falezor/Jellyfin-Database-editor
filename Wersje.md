@@ -7,6 +7,12 @@ English translation: [`Versions.md`](Versions.md).
 
 ## 1.6.x
 
+### 1.6.32 (2026-11-18)
+- **Testy automatyczne w repo:** `tests/` na `unittest` — auth/cookie, `Host`, paginacja, problemy, sieroty, delete/upload/backup/historia i filtr lekkiego ZIP-a.
+- **GitHub Actions:** Linux + Windows, Python 3.12, `python -m unittest discover -s tests -v`.
+- Release `v1.6.32` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
 ### 1.6.31 (2026-11-17)
 - **GET-y wymagają sesji:** `/api/*` i `/img` przyjmują ciasteczko `jfb_token` (HttpOnly, SameSite=Strict) ustawiane przez `/`, nagłówek `X-Token` lub pole `t`; cross-site `<img>` nie ma dostępu.
 - **Nagłówki bezpieczeństwa strony:** `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
