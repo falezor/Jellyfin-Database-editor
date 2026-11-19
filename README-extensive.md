@@ -1,7 +1,7 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 1.6.32 (2026-11-18)  
-This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish source: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
+**Version:** 1.7.6 (2026-11-19)  
+This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md).
 
 ---
 
@@ -115,6 +115,7 @@ On first run (no `data_dir` in settings) a **setup wizard** appears:
 - it allows choosing a folder through a system dialog,
 - it detects typical Jellyfin databases (Windows: `%ProgramData%\Jellyfin\Server\data`, `%LOCALAPPDATA%\jellyfin\data`, `%APPDATA%\Jellyfin\Server\data`; Linux: `/var/lib/jellyfin/data`, `/config/data`, `/data`, `~/jellyfin/data`, program folder),
 - it allows selecting a `jellyfin.db` file — the path is saved as `db_path` and used on subsequent starts.
+- if the quick read-only check cannot see `BaseItems` because of `-wal`/`-shm` permissions, a lock or an I/O error, the path is accepted and verified again while creating the working copy (the same mechanism as “Reload from original”); a real non-Jellyfin SQLite file is still rejected.
 
 Data layout:
 
@@ -147,7 +148,7 @@ Other leftover temporary files (`jfdb_*`, `jfup_*`, `jfexp_*`, `import_*`) are r
 
 - **Languages** — switches the interface language immediately; the choice is stored in `localStorage`.
 - **🛠 Setup** — reopens the data-folder and database configuration; it can be cancelled.
-- Next to the language code there is a mode badge: **USER / SUDO / ADMIN / ROOT** (see section 11).
+- The top-right corner always shows the language code and the program version; the mode badge **USER / SUDO / ADMIN / ROOT** appears to their left (see section 11).
 
 ### Left panel
 
@@ -271,7 +272,7 @@ Run the program in the same container as Jellyfin if you want to see its paths a
 - An orange root is allowed, but the UI warns.
 - “Select problems” skips items on red disks by default; the “all disks” checkbox includes them.
 - Deleting a series does not automatically remove its seasons and episodes — use “Select all” in the tree.
-- **Orphans in related tables** (for example images) are not removed together with `BaseItems`. Use the separate Settings section — it skips `UserData` and reports the number of removed rows.
+- **Orphans in related tables** (for example images) are not removed together with `BaseItems`. Use the separate Settings section — it skips `UserData`, reports columns as `table.column`, counts each table row once even if several columns point to missing items, ignores empty/zero-GUID references, and shows sample rows before cleaning.
 
 ### SQL script manual
 
@@ -290,7 +291,7 @@ On Windows the script contains comments instead of `sudo`/systemd. The script ca
 ### Upload
 
 1. The program checks whether Jellyfin is running and offers to stop it.
-2. Optionally it creates a backup `<database>-YYYY-MM-DD_HH-MM-SS.bak` from the live file.
+2. On the first Upload in a session it creates the **main session backup (anchor)**; optionally it also creates a `<database>-YYYY-MM-DD_HH-MM-SS.bak` from the live file (only one `.bak` per session).
 3. It creates the new database from the working copy and runs `quick_check`.
 4. It compares the schema with the original; missing tables require confirmation.
 5. It atomically replaces the file, preserving owner and permissions.
@@ -301,13 +302,17 @@ Upload is disabled for a database loaded “from the computer” (export-only mo
 ### History and Revert
 
 - Every Upload stores a full copy in `history/<id>/` and metadata in `index.json`.
-- History limit: **1–50**, default **5**; changing the limit trims the oldest entries.
+- The Jellyfin version is updated on **every successful detection**; the newest value is used for new entries when the server is stopped. If it has never been detected, the entry shows “unknown version” (the version is not stored in `jellyfin.db`).
+- The **first Upload in a session** creates a protected **main session backup (anchor)**. It is excluded from the count/size limits and from “Clear history” until the process exits; after the next start it becomes a normal, prunable entry.
+- History limit: **1–50**, default **5**. An optional size limit (`history_max_size_mb`, 0 = off) removes the oldest normal entries first; the session anchor is not counted.
 - **Revert** restores a selected entry with the same safeguards as Upload (Jellyfin stopped, backup, schema, `quick_check`). It does not create a new history entry.
 - A missing copy file is marked next to the date and Restore is disabled.
 
 ### Manual backups
 
 The **Backup** button in the History window creates a full copy in `<data_dir>/backups/`. Backups are outside the history limit and show differences against the current database (`+` in the backup / `−` in the database). They can be removed individually with the trash button.
+
+Only one `.bak` is created per session (on the first Upload with backup enabled). Optional `bak_keep` keeps the N newest program-created `<database>-*.bak` files; default **10**, 0 = off, max 10. The current session `.bak` is protected. Manual backups in `backups/` are never touched by this cleanup.
 
 ---
 
@@ -379,7 +384,7 @@ The program exposes a local HTTP API used by the interface. GET endpoints and `/
 | `/api/export` | GET/POST | working copy `.db` |
 | `/api/export-sql` | GET/POST | SQL dump / `.sql.gz` |
 | `/api/import-sql` | POST | SQL dump import |
-| `/api/orphans` | GET/POST | orphans in related tables |
+| `/api/orphans` | GET/POST | orphans in related tables; GET includes sample rows, POST `{clean:true}` removes them |
 | `/api/open` | POST | open a database from a path |
 | `/api/load` | POST | load a database file from the computer |
 | `/api/delete` | POST | delete items |
@@ -410,7 +415,7 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 16. Limitations and notes
 
-- The program does not automatically delete related rows; use the separate orphans section (it skips `UserData`).
+- The program does not automatically delete related rows; use the separate orphans section (it skips `UserData`, ignores empty/zero-GUID references and shows sample rows before cleaning).
 - Disk checks work best when the program sees the same paths and mounts as Jellyfin. For a database from another machine, statuses may be `unknown`.
 - On macOS there is no `/proc` — the program detects a missing folder but not a detached volume.
 - systemd `automount` mounts without an fstab entry may not be recognized as expected.
@@ -424,8 +429,8 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **1.6.32**.
-- Version scheme: `X.Y.Z`; `X` — milestone, `Y` — major feature, `Z` — fix.
+- Current version: **1.7.6**.
+- Version scheme: `X` — main line / major change, `Y` — new features, `Z` — bugfixes or very small changes. The next feature release is `1.8.0`; the next fix for this line is `1.7.7`.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
 - Build a release archive with `python scripts/build_release.py vX.Y.Z`.

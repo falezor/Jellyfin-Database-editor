@@ -1,10 +1,11 @@
 # Jellyfin DB editor
 
-A local, browser-based(working on native) viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
+A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
 
 ## Features
 
 - browse libraries, item types, series and movies, with search and per-disk filtering,
+- **orphan cleaning for related tables** — preview sample rows, skip `UserData`, and ignore empty/zero-GUID references,
 - detect missing files, unmounted or detached disks, duplicates, orphaned items and orphaned rows in related tables,
 - safely delete items from a working copy, with protection for unavailable disks,
 - **Upload** and **Revert** with a backup, version history and schema validation,
@@ -22,7 +23,7 @@ A local, browser-based(working on native) viewer and cleaner for Jellyfin's `jel
 
 - Python 3 (standard library only),
 - a graphical browser,
-- Jellyfin 10.10+ database schema (EF Core era).(might update if jellyfin changes db orientation or smth else happens)
+- Jellyfin 10.10+ database schema (EF Core era).
 
 ## Quick start
 
@@ -36,7 +37,7 @@ Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the s
 ## Documentation
 
 - **[README-extensive.md](README-extensive.md)** — full feature, configuration, API and limitations documentation.
-- `README-extensivePL.md` — internal technical documentation (Polish).
+- **[Versions.md](Versions.md)** — English version history.
 
 ## License
 

@@ -49,6 +49,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+APP_VERSION = '1.7.6'
+
 IMG_TYPES = {0: 'Primary', 1: 'Art', 2: 'Backdrop', 3: 'Banner', 4: 'Logo', 5: 'Thumb',
              6: 'Disc', 7: 'Box', 8: 'Screenshot', 9: 'Menu', 10: 'Chapter',
              11: 'BoxRear', 12: 'Profile'}
@@ -61,6 +63,7 @@ STATE = {'con': None, 'tmp': None, 'src': None, 'orig': None, 'work': None,
          'dirty': 0, 'sig': None, 'problems': None, 'pmap': None, 'libs': None, 'roots': [],
          'kind': 'path', 'label': None, 'nodb_reason': None, 'unreadable': 0, 'deleted': [], 'loading': False,
          'setup': False, 'sqljob': None, 'job': None, 'dialog': True,
+         'session_id': secrets.token_hex(8), 'anchor_id': None, 'session_bak': None,
          'nodb_reason_key': None, 'nodb_reason_args': {}}
 CFG = {'service_check': True, 'token': secrets.token_hex(16)}
 
@@ -347,6 +350,7 @@ def jf_detect(only_port=None):
         seen.add(port)
         st, data = jf_probe(port, xml_base)
         if st == 'jellyfin':
+            remember_jf_version(data)
             return {'state': 'running', 'port': port, 'source': source, 'info': data, 'detail': ''}
         if st == 'other' and wrong is None:
             wrong = (port, source, data)
@@ -390,10 +394,22 @@ def jf_scan():
     return None
 
 
+def remember_jf_version(info):
+    v = str((info or {}).get('Version') or '').strip()
+    if v and SETTINGS.get('jf_version') != v:
+        SETTINGS['jf_version'] = v
+        try:
+            save_settings()
+        except OSError:
+            pass
+
+
 def api_jellyfin(body):
     action = (body or {}).get('action')
     if action == 'scan':
         r = jf_scan()
+        if r:
+            remember_jf_version(r[1])
         return {'found': r[0] if r else None, 'info': r[1] if r else None}
     try:
         port = int(body.get('port'))
@@ -402,12 +418,15 @@ def api_jellyfin(body):
     if not 1 <= port <= 65535:
         raise ValueError(tr('e_port_range'))
     if action == 'test':
-        return jf_detect(port)
+        res = jf_detect(port)
+        remember_jf_version(res.get('info'))
+        return res
     if action == 'save':
         SETTINGS['jf_port'] = port
         persisted = save_settings()
         res = jf_detect(port)
         JF.update(res)
+        remember_jf_version(res.get('info'))
         return dict(res, persisted=persisted)
     raise ValueError(tr('e_unknown_action'))
 
@@ -1322,17 +1341,92 @@ def orphan_targets():
     return out
 
 
+def orphan_groups():
+    groups = {}
+    for table, column in orphan_targets():
+        groups.setdefault(table, []).append(column)
+    return [(table, sorted(cols)) for table, cols in sorted(groups.items())]
+
+
+NO_REF_GUID = '00000000-0000-0000-0000-000000000000'
+
+
+def orphan_ref_sql(col):
+    """Kolumna zawiera referencję, która nie jest pusta ani pustym GUID-em."""
+    c = qi(col)
+    return (f"{c} IS NOT NULL AND TRIM({c}) <> '' "
+            f"AND LOWER(TRIM({c})) <> '{NO_REF_GUID}'")
+
+
+def orphan_where_sql(table, columns):
+    t = qi(table)
+    return ' OR '.join(
+        f'({orphan_ref_sql(col)} AND NOT EXISTS '
+        f'(SELECT 1 FROM BaseItems b WHERE b.Id = {t}.{qi(col)}))'
+        for col in columns)
+
+
+def orphan_count(con, table, columns):
+    """Liczba unikalnych wierszy tabeli, w których dowolna kolumna wskazuje brakujący BaseItems.Id."""
+    return con.execute(
+        f'SELECT COUNT(*) FROM {qi(table)} WHERE {orphan_where_sql(table, columns)}').fetchone()[0]
+
+
+def _sample_text(v):
+    if isinstance(v, (bytes, bytearray)):
+        return f'<BLOB {len(v)} B>'
+    if v is None:
+        return 'NULL'
+    s = str(v).replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+    return s if len(s) <= 80 else s[:77] + '...'
+
+
+def orphan_samples(con, table, columns, limit=3):
+    """Kilka przykładowych wierszy sierot do podglądu w UI (bez BLOB-ów i długich wartości)."""
+    try:
+        rows = con.execute(
+            f'SELECT * FROM {qi(table)} WHERE {orphan_where_sql(table, columns)} LIMIT {int(limit)}'
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    if not rows:
+        return []
+    try:
+        keys = list(rows[0].keys())
+    except AttributeError:
+        keys = [r[1] for r in con.execute(f'PRAGMA table_info({qi(table)})')]
+    order = list(columns)
+    for name in ('Name', 'Path', 'ProviderId', 'ProviderValue', 'ImageType',
+                 'StreamType', 'IndexNumber', 'ParentIndexNumber', 'ChapterType',
+                 'PersonId', 'ItemValueId', 'Value'):
+        if name in keys and name not in order:
+            order.append(name)
+    for name in keys:
+        if len(order) >= 8:
+            break
+        if name not in order:
+            order.append(name)
+    selected = order[:8]
+    out = []
+    for row in rows:
+        item = {}
+        for idx, name in enumerate(keys):
+            if name in selected:
+                item[name] = _sample_text(row[idx])
+        out.append(item)
+    return out
+
+
 def api_orphans(clean=False):
     removed, remaining = [], []
     with LOCK:
         con = STATE['con']
-        targets = orphan_targets()
         if clean:
+            targets = orphan_targets()
             con.execute('BEGIN')
             try:
                 for t, col in targets:
-                    where = (f'{qi(col)} IS NOT NULL AND NOT EXISTS '
-                             f'(SELECT 1 FROM BaseItems b WHERE b.Id = {qi(t)}.{qi(col)})')
+                    where = orphan_where_sql(t, [col])
                     cur = con.execute(f'DELETE FROM {qi(t)} WHERE {where}')
                     if cur.rowcount:
                         removed.append({'table': t, 'column': col, 'rows': cur.rowcount})
@@ -1340,12 +1434,11 @@ def api_orphans(clean=False):
             except Exception:
                 con.execute('ROLLBACK')
                 raise
-        for t, col in orphan_targets():
-            n = con.execute(
-                f'SELECT COUNT(*) FROM {qi(t)} WHERE {qi(col)} IS NOT NULL AND NOT EXISTS '
-                f'(SELECT 1 FROM BaseItems b WHERE b.Id = {qi(t)}.{qi(col)})').fetchone()[0]
+        for t, cols in orphan_groups():
+            n = orphan_count(con, t, cols)
             if n:
-                remaining.append({'table': t, 'column': col, 'rows': n})
+                remaining.append({'table': t, 'columns': cols, 'rows': n,
+                                  'samples': orphan_samples(con, t, cols)})
         total = sum(x['rows'] for x in remaining)
         removed_total = sum(x['rows'] for x in removed)
         if removed_total:
@@ -1945,6 +2038,7 @@ class DbError(ValueError):
 
 
 def api_upload(do_backup, ver='', force_schema=False):
+    ver = str(ver or last_known_jf_version() or '').strip()
     if STATE['kind'] == 'upload':
         raise ValueError(tr('e_upload_mode'))
     src = STATE['src']
@@ -1968,13 +2062,15 @@ def api_upload(do_backup, ver='', force_schema=False):
     st = fs_stat_many([src])[0]
     if not st['e']:
         raise RuntimeError(tr('e_read_src', src=src))
+    if not STATE.get('anchor_id'):
+        history_add_anchor(ver)  # główny backup sesji, poza limitem historii
 
     scratch = tempfile.mkdtemp(prefix='jfup_', dir=work_tmp())
     hist = None
     try:
         backup = None
         sig_live = file_sig(src)
-        if do_backup:
+        if do_backup and not STATE.get('session_bak'):
             backup = free_backup_name(src)
             tb = os.path.join(scratch, 'backup.db')
             live = os.path.join(scratch, 'live.db')
@@ -1985,6 +2081,8 @@ def api_upload(do_backup, ver='', force_schema=False):
             b.close()
             o.close()
             install_file(tb, backup, st)
+            STATE['session_bak'] = backup
+            prune_bak_files(src)
 
         tn = os.path.join(scratch, 'new.db')
         with LOCK:
@@ -2047,48 +2145,93 @@ def history_file(rec):
     return os.path.join(HISTORY_DIR, rec.get('file') or (rec.get('id', '') + '.db'))
 
 
+def history_max_size_mb():
+    try:
+        n = int(SETTINGS.get('history_max_size_mb', 0))
+    except (TypeError, ValueError):
+        n = 0
+    return max(0, min(1000000, n))
+
+
+def history_protected(rec):
+    return rec.get('role') == 'anchor' and rec.get('session') == STATE.get('session_id')
+
+
+def history_record_size(rec):
+    size = rec.get('size')
+    if isinstance(size, int) and size >= 0:
+        return size
+    try:
+        return os.path.getsize(history_file(rec))
+    except OSError:
+        return 0
+
+
+def history_delete_record(rec):
+    f = history_file(rec)
+    try:
+        os.remove(f)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    try:
+        os.rmdir(os.path.dirname(f))
+    except OSError:
+        pass
+    return True
+
+
 def history_prune():
+    """Limity liczby i rozmiaru dotyczą zwykłych wpisów; anchor sesji jest chroniony."""
     recs = history_load()
-    keep = history_limit()
-    if len(recs) <= keep:
+    if not recs:
         return recs
-    for old in recs[keep:]:
-        f = history_file(old)
-        try:
-            os.remove(f)
-        except OSError:
-            pass
-        try:
-            os.rmdir(os.path.dirname(f))
-        except OSError:
-            pass
-    recs = recs[:keep]
-    history_save(recs)
+    normal = [r for r in recs if not history_protected(r)]
+    keep = normal[:history_limit()]
+    drop = normal[history_limit():]
+    max_size = history_max_size_mb()
+    if max_size:
+        cap = max_size * 1024 * 1024
+        total = sum(history_record_size(r) for r in keep)
+        while len(keep) > 1 and total > cap:
+            old = keep.pop()
+            total -= history_record_size(old)
+            drop.append(old)
+    dropped = set()
+    for r in drop:
+        if history_delete_record(r):
+            dropped.add(r.get('id'))
+    if dropped:
+        recs = [r for r in recs if r.get('id') not in dropped]
+        history_save(recs)
     return recs
 
 
 def history_clear():
-    """Czyści TYLKO automatyczną historię uploadów (tmp/history). Ręczne kopie zostają."""
+    """Czyści automatyczną historię; bieżący anchor sesji zostaje do zamknięcia programu."""
     recs = history_load()
+    kept, cleared = [], 0
     for r in recs:
-        f = history_file(r)
+        if history_protected(r):
+            kept.append(r)
+            continue
+        if history_delete_record(r):
+            cleared += 1
+        else:
+            kept.append(r)
+    if kept:
+        history_save(kept)
+    else:
         try:
-            os.remove(f)
+            os.remove(HISTORY_INDEX)
         except OSError:
             pass
         try:
-            os.rmdir(os.path.dirname(f))
+            os.rmdir(HISTORY_DIR)
         except OSError:
             pass
-    try:
-        os.remove(HISTORY_INDEX)
-    except OSError:
-        pass
-    try:
-        os.rmdir(HISTORY_DIR)
-    except OSError:
-        pass
-    return len(recs)
+    return {'cleared': cleared, 'kept': len(kept)}
 
 
 def history_verify():
@@ -2164,6 +2307,37 @@ def history_add(ver, snapshot_path):
     return rec
 
 
+def history_add_anchor(ver=''):
+    """Główny backup sesji: kopia oryginału sprzed pierwszego Uploadu w procesie."""
+    if STATE.get('anchor_id'):
+        return None
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    rid = time.strftime('%Y%m%d-%H%M%S')
+    n = 1
+    while os.path.exists(os.path.join(HISTORY_DIR, rid)):
+        n += 1
+        rid = time.strftime('%Y%m%d-%H%M%S') + '-' + str(n)
+    base = os.path.basename(STATE.get('src') or '') or 'jellyfin.db'
+    folder = os.path.join(HISTORY_DIR, rid)
+    os.makedirs(folder, exist_ok=True)
+    dst = os.path.join(folder, base)
+    con = sqlite3.connect(STATE['orig'])
+    out = sqlite3.connect(dst)
+    try:
+        con.backup(out)
+    finally:
+        out.close()
+        con.close()
+    rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'), 'ver': (ver or '').strip(),
+           'removed': 0, 'added': 0, 'items_removed': [], 'items_added': [],
+           'size': os.path.getsize(dst), 'file': rid + '/' + base, 'db_name': base,
+           'role': 'anchor', 'session': STATE.get('session_id')}
+    history_save([rec] + history_load())
+    STATE['anchor_id'] = rid
+    history_prune()
+    return rec
+
+
 def api_history(params):
     rid = params.get('id', [''])[0]
     recs = history_load()
@@ -2175,29 +2349,102 @@ def api_history(params):
     out = [{k: v for k, v in r.items() if k not in ('items_removed', 'items_added')} for r in recs]
     for r in out:
         r['exists'] = os.path.exists(history_file(r))
-    return {'limit': history_limit(), 'records': out}
+        r['protected'] = history_protected(r)
+    return {'limit': history_limit(), 'max_size_mb': history_max_size_mb(),
+            'bak_keep': bak_keep_limit(), 'records': out}
 
 
 def api_history_post(body):
     action = (body or {}).get('action')
     if action == 'clear':
-        return {'ok': True, 'cleared': history_clear()}
+        return {'ok': True, **history_clear()}
     raise ValueError(tr('e_unknown_action'))
+
+
+def bak_keep_limit():
+    try:
+        n = int(SETTINGS.get('bak_keep', 10))
+    except (TypeError, ValueError):
+        n = 10
+    return max(0, min(10, n))
+
+
+def prune_bak_files(db_path):
+    """Opcjonalnie zostawia N najnowszych plików <baza>-*.bak; ręcznych kopii nie rusza."""
+    keep = bak_keep_limit()
+    if not keep or not db_path:
+        return 0
+    folder = os.path.dirname(os.path.abspath(db_path))
+    base = os.path.basename(db_path)
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return 0
+    files = []
+    prefix = base + '-'
+    current = STATE.get('session_bak') or ''
+    current_key = os.path.normcase(os.path.abspath(current)) if current else ''
+    for name in names:
+        if not (name.startswith(prefix) and name.endswith('.bak')):
+            continue
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            files.append((os.path.getmtime(path), path))
+        except OSError:
+            pass
+    files.sort(reverse=True)
+    keep_others = max(0, keep - (1 if current and os.path.isfile(current) else 0))
+    removed = 0
+    for _, path in files:
+        if current_key and os.path.normcase(os.path.abspath(path)) == current_key:
+            continue
+        if keep_others > 0:
+            keep_others -= 1
+            continue
+        try:
+            os.remove(path)
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def api_settings(body):
     body = body or {}
-    if 'history_max' in body:
-        try:
-            n = int(body['history_max'])
-        except (TypeError, ValueError):
-            raise ValueError(tr('e_history_max'))
-        if not 1 <= n <= 50:
-            raise ValueError(tr('e_history_max'))
-        SETTINGS['history_max'] = n
+    if any(k in body for k in ('history_max', 'history_max_size_mb', 'bak_keep')):
+        if 'history_max' in body:
+            try:
+                n = int(body['history_max'])
+            except (TypeError, ValueError):
+                raise ValueError(tr('e_history_max'))
+            if not 1 <= n <= 50:
+                raise ValueError(tr('e_history_max'))
+            SETTINGS['history_max'] = n
+        if 'history_max_size_mb' in body:
+            try:
+                n = int(body['history_max_size_mb'])
+            except (TypeError, ValueError):
+                raise ValueError(tr('e_history_size'))
+            if not 0 <= n <= 1000000:
+                raise ValueError(tr('e_history_size'))
+            SETTINGS['history_max_size_mb'] = n
+        if 'bak_keep' in body:
+            try:
+                n = int(body['bak_keep'])
+            except (TypeError, ValueError):
+                raise ValueError(tr('e_bak_keep'))
+            if not 0 <= n <= 10:
+                raise ValueError(tr('e_bak_keep'))
+            SETTINGS['bak_keep'] = n
         persisted = save_settings()
-        history_prune()
-        return {'ok': True, 'persisted': persisted, 'history_max': n}
+        if 'history_max' in body or 'history_max_size_mb' in body:
+            history_prune()
+        if 'bak_keep' in body:
+            prune_bak_files(STATE.get('src'))
+        return {'ok': True, 'persisted': persisted, 'history_max': history_limit(),
+                'history_max_size_mb': history_max_size_mb(), 'bak_keep': bak_keep_limit()}
     if 'data_dir' in body:
         p = valid_data_dir(str(body.get('data_dir') or ''))
         SETTINGS['data_dir'] = p
@@ -2281,9 +2528,22 @@ def backups_save(recs):
     os.replace(tmp, p)
 
 
+def last_known_jf_version():
+    v = str(SETTINGS.get('jf_version') or '').strip()
+    if v:
+        return v
+    for recs in (history_load(), backups_load()):
+        for r in recs:
+            v = str(r.get('ver') or '').strip()
+            if v:
+                return v
+    return ''
+
+
 def api_backup(body):
     if STATE['con'] is None:
         raise ValueError(tr('e_no_db'))
+    ver = str((body or {}).get('ver') or last_known_jf_version() or '').strip()
     stamp = time.strftime('%Y-%m-%d_%H-%M-%S')
     rid = time.strftime('%Y%m%d-%H%M%S')
     path = os.path.join(backups_dir(), f'jellyfin-{stamp}.db')
@@ -2303,7 +2563,7 @@ def api_backup(body):
             w.close()
     job_set('done', 1, 1)
     rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
-           'ver': str((body or {}).get('ver') or '').strip(),
+           'ver': ver,
            'size': os.path.getsize(path), 'file': os.path.basename(path)}
     backups_save([rec] + backups_load())
     return {'ok': True, 'path': path, **rec}
@@ -2655,7 +2915,20 @@ def valid_db_file(path):
             con.execute('SELECT 1 FROM BaseItems LIMIT 1')
         finally:
             con.close()
-    except sqlite3.Error:
+    except sqlite3.Error as e:
+        msg = str(e).lower()
+        # Read-only SQLite może nie widzieć schematu z -wal, gdy brak dostępu
+        # do -wal/-shm. Nie skazuj takiej bazy na "to nie Jellyfin" — otwarcie
+        # kopii roboczej/ADMIN zweryfikuje ją właściwie.
+        wal = p + '-wal'
+        deferred = (
+            ('no such table' in msg and os.path.exists(wal))
+            or any(x in msg for x in ('unable to open', 'permission', 'readonly',
+                                      'locked', 'shm', 'wal', 'disk i/o'))
+        )
+        if deferred:
+            print(f'Walidacja bazy odroczona ({p}): {e}', file=sys.stderr)
+            return p
         raise ValueError(tr('e_not_jellyfin_db'))
     return p
 
@@ -2773,7 +3046,8 @@ def page_html():
     return (html_template().replace('__TOKEN__', CFG['token'])
                 .replace('__I18N__', json.dumps(TEXT, ensure_ascii=False))
                 .replace('__LANGS__', json.dumps(list(LANGS)))
-                .replace('__LANGNAMES__', json.dumps(LANG_NAMES, ensure_ascii=False)))
+                .replace('__LANGNAMES__', json.dumps(LANG_NAMES, ensure_ascii=False))
+                .replace('__VERSION__', APP_VERSION))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2958,6 +3232,7 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == '/api/jellyfin':
                 if p.get('refresh') or JF['state'] == 'unknown':
                     JF.update(jf_detect())
+                remember_jf_version(JF.get('info'))
                 self.send_json(JF)
             elif u.path == '/api/priv':
                 self.send_json(priv_state())
@@ -3127,6 +3402,7 @@ def startup_db(path):
     STATE['src'] = path
     try:
         open_copy(path)
+        prune_bak_files(path)
     except (OSError, ValueError, RuntimeError, sqlite3.Error) as e:
         STATE['nodb_reason'] = str(e)
         STATE['nodb_reason_key'] = getattr(e, 'key', None) if isinstance(e, DbError) else None

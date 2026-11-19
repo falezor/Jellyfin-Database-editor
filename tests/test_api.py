@@ -14,6 +14,8 @@ import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
 
+import jf_browser as j
+
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_RE = re.compile(r"TOKEN='([a-f0-9]+)'")
 
@@ -55,6 +57,10 @@ def create_test_db(path, count=25):
             ImageType INTEGER,
             Path TEXT
         );
+        CREATE TABLE AncestorIds (
+            ItemId TEXT REFERENCES BaseItems(Id),
+            AncestorId TEXT REFERENCES BaseItems(Id)
+        );
         """)
         rows = []
         for i in range(count):
@@ -67,6 +73,14 @@ def create_test_db(path, count=25):
                     ('img-0', 'item-000', 0, '/media/item-000.jpg'))
         con.execute('INSERT INTO BaseItemImageInfos VALUES (?,?,?,?)',
                     ('img-orphan', 'missing-item', 0, '/media/orphan.jpg'))
+        con.execute('INSERT INTO BaseItemImageInfos VALUES (?,?,?,?)',
+                    ('img-empty', '', 0, ''))
+        con.execute('INSERT INTO AncestorIds VALUES (?,?)',
+                    ('missing-item', 'missing-ancestor'))
+        con.execute('INSERT INTO AncestorIds VALUES (?,?)', ('', ''))
+        con.execute('INSERT INTO AncestorIds VALUES (?,?)',
+                    ('00000000-0000-0000-0000-000000000000',
+                     '00000000-0000-0000-0000-000000000000'))
         con.commit()
     finally:
         con.close()
@@ -79,7 +93,7 @@ class Server:
         os.makedirs(self.data_dir)
         self.config = os.path.join(self.tmp, 'settings.json')
         with open(self.config, 'w', encoding='utf-8') as f:
-            json.dump({'data_dir': self.data_dir}, f)
+            json.dump({'data_dir': self.data_dir, 'jf_version': '10.10.7'}, f)
         self.port = free_port()
         self.base = f'http://127.0.0.1:{self.port}'
         self.log_path = os.path.join(self.tmp, 'server.log')
@@ -108,16 +122,24 @@ class Server:
             if self.proc.poll() is not None:
                 break
             try:
-                r = self.opener.open(self.base + '/', timeout=0.4)
-                self.page = r.read().decode('utf-8')
-                m = TOKEN_RE.search(self.page)
-                if not m:
-                    raise RuntimeError('token missing from page')
-                self.token = m.group(1)
-                return
+                if self.page is None:
+                    r = self.opener.open(self.base + '/', timeout=0.4)
+                    self.page = r.read().decode('utf-8')
+                    m = TOKEN_RE.search(self.page)
+                    if not m:
+                        raise RuntimeError('token missing from page')
+                    self.token = m.group(1)
+                req = urllib.request.Request(
+                    self.base + '/api/info',
+                    headers={'X-Token': self.token, 'X-Lang': 'en'},
+                )
+                with self.opener.open(req, timeout=0.4) as r:
+                    info = json.loads(r.read().decode('utf-8'))
+                if not info.get('nodb'):
+                    return
             except Exception as e:
                 last = e
-                time.sleep(0.2)
+            time.sleep(0.2)
         self.log.flush()
         log = Path(self.log_path).read_text(encoding='utf-8', errors='replace')
         raise RuntimeError(f'server did not start: {last}\n{log}')
@@ -205,6 +227,10 @@ class ApiTests(unittest.TestCase):
         status, headers = self.server.get_headers('/')
         self.assertEqual(status, 200)
         self.assertIn('jfb_token=', headers.get('Set-Cookie', ''))
+        self.assertIn(f'<span id="version">{j.APP_VERSION}</span>', self.server.page)
+        self.assertNotIn('__VERSION__', self.server.page)
+        self.assertLess(self.server.page.index('id="topmode"'), self.server.page.index('id="langnow"'))
+        self.assertLess(self.server.page.index('id="langnow"'), self.server.page.index('id="version"'))
         self.assertEqual(headers.get('X-Frame-Options'), 'DENY')
         self.assertIn("frame-ancestors 'none'", headers.get('Content-Security-Policy', ''))
 
@@ -250,7 +276,14 @@ class ApiTests(unittest.TestCase):
 
         status, orphans = self.server.get('/api/orphans')
         self.assertEqual(status, 200)
-        self.assertEqual(orphans['total'], 1)
+        self.assertEqual(orphans['total'], 2)
+        ancestor = next(x for x in orphans['tables'] if x['table'] == 'AncestorIds')
+        self.assertEqual(ancestor['columns'], ['AncestorId', 'ItemId'])
+        self.assertEqual(ancestor['rows'], 1)
+        self.assertEqual(ancestor['samples'][0]['ItemId'], 'missing-item')
+        self.assertEqual(ancestor['samples'][0]['AncestorId'], 'missing-ancestor')
+        img = next(x for x in orphans['tables'] if x['table'] == 'BaseItemImageInfos')
+        self.assertEqual(img['samples'][0]['ItemId'], 'missing-item')
 
         status, deleted = self.server.post('/api/delete', {'ids': ['item-000']})
         self.assertEqual(status, 200)
@@ -258,18 +291,18 @@ class ApiTests(unittest.TestCase):
 
         status, orphans = self.server.get('/api/orphans')
         self.assertEqual(status, 200)
-        self.assertEqual(orphans['total'], 2)
+        self.assertEqual(orphans['total'], 3)
 
         status, cleaned = self.server.post('/api/orphans', {'clean': True})
         self.assertEqual(status, 200)
-        self.assertEqual(cleaned['removed_total'], 2)
+        self.assertEqual(cleaned['removed_total'], 3)
         self.assertEqual(cleaned['total'], 0)
 
         status, info = self.server.get('/api/info')
         self.assertEqual(status, 200)
-        self.assertEqual(info['dirty'], 3)
+        self.assertEqual(info['dirty'], 4)
 
-        status, uploaded = self.server.post('/api/upload', {'backup': True, 'ver': 'test'})
+        status, uploaded = self.server.post('/api/upload', {'backup': True})
         self.assertEqual(status, 200)
         backup = uploaded.get('backup')
         self.assertTrue(backup and os.path.isfile(backup))
@@ -282,6 +315,11 @@ class ApiTests(unittest.TestCase):
         con = sqlite3.connect(self.db)
         try:
             self.assertEqual(con.execute('SELECT COUNT(*) FROM BaseItems').fetchone()[0], 24)
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM AncestorIds WHERE ItemId IN ('', '00000000-0000-0000-0000-000000000000')"
+            ).fetchone()[0], 2)
+            self.assertEqual(con.execute(
+                "SELECT COUNT(*) FROM BaseItemImageInfos WHERE ItemId = ''").fetchone()[0], 1)
         finally:
             con.close()
 
@@ -290,7 +328,41 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(info['dirty'], 0)
         status, history = self.server.get('/api/history')
         self.assertEqual(status, 200)
+        self.assertEqual(len(history['records']), 2)
+        self.assertEqual(history['bak_keep'], 10)
+        anchors = [r for r in history['records'] if r.get('protected')]
+        self.assertEqual(len(anchors), 1)
+        self.assertEqual(anchors[0]['role'], 'anchor')
+        self.assertEqual(anchors[0]['ver'], '10.10.7')
+        self.assertTrue(all(r['ver'] == '10.10.7' for r in history['records']))
+        self.assertTrue(os.path.isfile(os.path.join(self.server.data_dir, 'history',
+                                                     anchors[0]['file'])))
+
+        def baks():
+            return [n for n in os.listdir(os.path.dirname(self.db))
+                    if n.startswith('jellyfin.db-') and n.endswith('.bak')]
+
+        self.assertEqual(len(baks()), 1)
+
+        status, _ = self.server.post('/api/delete', {'ids': ['item-001']})
+        self.assertEqual(status, 200)
+        status, uploaded2 = self.server.post('/api/upload', {'backup': True})
+        self.assertEqual(status, 200)
+        self.assertIsNone(uploaded2.get('backup'))
+        self.assertEqual(len(baks()), 1)
+        status, history = self.server.get('/api/history')
+        self.assertEqual(status, 200)
+        self.assertEqual(len(history['records']), 3)
+
+        status, cleared = self.server.post('/api/history', {'action': 'clear'})
+        self.assertEqual(status, 200)
+        self.assertEqual(cleared['cleared'], 2)
+        self.assertEqual(cleared['kept'], 1)
+        status, history = self.server.get('/api/history')
+        self.assertEqual(status, 200)
         self.assertEqual(len(history['records']), 1)
+        self.assertTrue(history['records'][0]['protected'])
+
         status, orphans = self.server.get('/api/orphans')
         self.assertEqual(status, 200)
         self.assertEqual(orphans['total'], 0)

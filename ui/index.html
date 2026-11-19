@@ -17,10 +17,11 @@ body{margin:0;font:14px system-ui,sans-serif;display:flex;flex-direction:column;
 #menubar button{background:transparent;border:0;color:inherit;padding:0 7px;line-height:18px;font-size:12px;border-radius:3px;cursor:pointer;font-family:inherit}
 #menubar button:hover{background:rgba(128,128,128,.18)}
 #menubar button.active{background:rgba(21,101,192,.18);color:var(--accent)}
-#langnow{margin-left:auto;font-size:10px;opacity:.6;letter-spacing:1px}
+#topright{display:flex;align-items:center;gap:7px;margin-left:auto;white-space:nowrap}
+#langnow,#version{font-size:10px;opacity:.6;letter-spacing:1px}
 #loadmore{margin:6px 8px;padding:5px 8px;font-size:12px;border:1px solid var(--b);background:transparent;color:inherit;border-radius:4px;cursor:pointer}
 #loadmore:hover{background:rgba(128,128,128,.18)}
-#topmode{font-size:10px;letter-spacing:.6px;line-height:15px;padding:0 6px;border-radius:8px;border:1px solid currentColor;margin-left:7px;opacity:.9;white-space:nowrap;cursor:default}
+#topmode{font-size:10px;letter-spacing:.6px;line-height:15px;padding:0 6px;border-radius:8px;border:1px solid currentColor;opacity:.9;white-space:nowrap;cursor:default}
 #topmode.user{color:#78909c}
 #topmode.admin{color:#1565c0;background:rgba(21,101,192,.12)}
 #topmode.sudo{color:#8e24aa;background:rgba(142,36,170,.12)}
@@ -65,6 +66,7 @@ body.leftcollapsed #splitcol{opacity:.85}
 .winhead .x:hover{background:rgba(128,128,128,.18)}
 .mbox{background:Canvas;color:CanvasText;border:1px solid var(--b);border-radius:8px;padding:16px;width:min(470px,92vw);display:flex;flex-direction:column;gap:10px;margin:auto}
 .mbox h3{margin:0}.mbox p{margin:0;font-size:13px;opacity:.88;white-space:pre-line}
+#atext{max-height:55vh;overflow:auto;overflow-wrap:anywhere}
 .mbtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}#pwmsg{font-size:13px;min-height:1.2em}
 button.primary{background:#1565c0;color:#fff;border:0;border-radius:4px;cursor:pointer}
 #pwmodal,#amodal,#nodb,#inputmodal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:35;background:rgba(0,0,0,.55)}
@@ -126,6 +128,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
 .hver{min-width:150px;font-weight:600}
 .hdate{flex:1;opacity:.8}
 .hchg{white-space:nowrap}
+.hpin{font-size:11px;white-space:nowrap;color:#1565c0;background:rgba(21,101,192,.12);border-radius:8px;padding:1px 7px}
 .hminus{color:#e5534b}.hplus{color:#3fb950}
 .hchev{width:12px;text-align:center;opacity:.7}
 .hrev{font-size:11px;line-height:16px;padding:1px 8px;background:transparent;border:1px solid #1565c0;color:#1565c0;border-radius:3px;cursor:pointer;margin-left:6px}
@@ -177,8 +180,11 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <div id="langmenu"></div>
   </div>
   <button id="m_setup" data-i18n-title="menu_setup_tip" title="Setup">🛠</button>
-  <span id="langnow"></span>
-  <span id="topmode" style="display:none"></span>
+  <span id="topright">
+    <span id="topmode" style="display:none"></span>
+    <span id="langnow"></span>
+    <span id="version">__VERSION__</span>
+  </span>
 </div></div>
 <div id="main">
 <div id="left">
@@ -256,6 +262,12 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <div class="row2"><input type="number" id="hmax" min="1" max="50" value="5"><button id="hmaxsave" data-i18n="port_save">Zapisz</button></div>
     <span style="opacity:.65;font-size:12px" data-i18n="history_max_note">Domyślnie 5. Każdy Upload zapisuje kopię bazy w folderze history.</span>
     <span style="opacity:.65;font-size:12px" data-i18n="history_space_note">Każdy wpis to pełna kopia bazy, więc większy limit zajmuje więcej miejsca na dysku.</span>
+    <label for="hsize" data-i18n="history_size_label">Limit rozmiaru historii (MB, 0 = bez limitu)</label>
+    <div class="row2"><input type="number" id="hsize" min="0" max="1000000" value="0"></div>
+    <span style="opacity:.65;font-size:12px" data-i18n="history_size_note">Opcjonalny. Anchor sesji nie liczy się do limitu.</span>
+    <label for="bkeep" data-i18n="bak_keep_label">Limit plików .bak (0 = bez limitu)</label>
+    <div class="row2"><input type="number" id="bkeep" min="0" max="10" value="10"></div>
+    <span style="opacity:.65;font-size:12px" data-i18n="bak_keep_note">Opcjonalny. Zostawia N najnowszych .bak; pierwszy .bak sesji jest chroniony.</span>
     <button id="hclear" class="danger" data-i18n="hclear">🗑 Wyczyść historię</button>
     <div id="hmaxmsg"></div>
   </div>
@@ -360,7 +372,7 @@ let LANG=localStorage.getItem('jfb_lang');
 if(!LANG||!LANGS.includes(LANG)){const nv=(navigator.language||'pl').slice(0,2).toLowerCase();LANG=LANGS.includes(nv)?nv:'pl'}
 const t=(k,kv)=>{const e=I18N[k]||{};let s=e[LANG]||e.pl||k;if(kv)for(const p in kv)s=s.split('{'+p+'}').join(kv[p]);return s};
 const $=s=>document.querySelector(s);
-let sel=new Set(), rows=[], src='', view=null, lastInfo=null, nodbSkipped=false, listLimit=2000, listOffset=0, orphTotal=0;
+let sel=new Set(), rows=[], src='', view=null, lastInfo=null, nodbSkipped=false, listLimit=2000, listOffset=0, orphTotal=0, orphData=null;
 let jfLast=null, svcInfo=null, priv={mode:'limited'};
 let disksData=[], mountsData=[], diskSel=null;
 let busyN=0;
@@ -744,22 +756,35 @@ $('#dl').onclick=()=>{
 };
 $('#probs').onclick=openProblems;
 async function loadSettingsForm(){
-  try{const d=await j('/api/history'); $('#hmax').value=d.limit; $('#hmaxmsg').textContent='';$('#hmaxmsg').className='';}catch(e){}
+  try{
+    const d=await j('/api/history');
+    $('#hmax').value=d.limit;
+    $('#hsize').value=d.max_size_mb||0;
+    $('#bkeep').value=(d.bak_keep==null?10:d.bak_keep);
+    $('#hmaxmsg').textContent='';$('#hmaxmsg').className='';
+  }catch(e){}
 }
 async function saveSettings(){
   const n=parseInt($('#hmax').value,10);
-  const {ok,t:r}=await post('/api/settings',{history_max:n});
+  const sz=parseInt($('#hsize').value,10)||0;
+  const bk=parseInt($('#bkeep').value,10)||0;
+  const {ok,t:r}=await post('/api/settings',{history_max:n,history_max_size_mb:sz,bak_keep:bk});
   const m=$('#hmaxmsg'); m.className=ok?'ok':'miss';
   m.textContent=ok?t('saved_ok'):(r.error||'error');
-  if(ok) $('#hmax').value=r.history_max;
+  if(ok){
+    $('#hmax').value=r.history_max;
+    $('#hsize').value=r.history_max_size_mb;
+    $('#bkeep').value=r.bak_keep;
+  }
 }
 $('#hmaxsave').onclick=saveSettings;
 
 function renderOrphans(r){
+  orphData=r||null;
   const m=$('#orphmsg'); orphTotal=r.total||0;
   if(orphTotal){
     m.className='warn';
-    m.textContent=t('orph_found',{n:orphTotal,tables:(r.tables||[]).map(x=>x.table+' ('+x.rows+')').join(', ')});
+    m.textContent=t('orph_found',{n:orphTotal,tables:(r.tables||[]).map(x=>(x.columns||[x.column]).map(c=>x.table+'.'+c).join(', ')+' ('+x.rows+')').join(', ')});
   }else if(r.removed_total){
     m.className='ok'; m.textContent=t('orph_done',{n:r.removed_total});
     m.textContent+=' '+t('orph_none');
@@ -773,9 +798,27 @@ $('#orphcheck').onclick=async()=>{
   try{renderOrphans(await j('/api/orphans'))}catch(e){alert(t('conn_error',{err:e}))}
   $('#orphcheck').classList.remove('working');
 };
+function orphanPreview(r){
+  const lines=[t('orph_confirm',{n:r.total||0})];
+  for(const x of (r.tables||[])){
+    lines.push('');
+    lines.push(x.table+' ('+x.rows+')');
+    const samples=x.samples||[];
+    if(!samples.length){lines.push('  '+t('orph_preview_empty'));continue}
+    for(const s of samples)
+      lines.push('  '+Object.keys(s).map(k=>k+'='+s[k]).join(', '));
+    if((x.rows||0)>samples.length)
+      lines.push('  '+t('orph_preview_more',{n:(x.rows||0)-samples.length}));
+  }
+  lines.push('');
+  lines.push(t('orph_preview_hint'));
+  return lines.join('\n');
+}
 $('#orphclean').onclick=async()=>{
   if(!orphTotal)return;
-  if(!confirm(t('orph_confirm',{n:orphTotal})))return;
+  const choice=await askModal({title:t('orph_preview_title'),text:orphanPreview(orphData||{}),
+    buttons:[{label:t('cancel'),value:'cancel'},{label:t('orph_clean'),value:'clean',primary:true}]});
+  if(choice!=='clean')return;
   $('#orphclean').classList.add('working');
   const {ok,t:r}=await post('/api/orphans',{clean:true});
   $('#orphclean').classList.remove('working');
@@ -807,14 +850,19 @@ function renderHistory(d){
     head.append(el('span','hver',r.ver?('Jellyfin '+r.ver):t('history_unknown_ver')));
     head.append(el('span','hdate',r.ts||''));
     if(r.exists===false) head.append(el('span','hmiss',t('history_missing')));
-    const chg=el('span','hchg');
-    chg.append(el('span','hminus','−'+r.removed+' '));
-    chg.append(el('span','hplus','+'+r.added));
+    if(r.protected){
+      head.append(el('span','hpin',t('history_anchor')));
+    }else{
+      const chg=el('span','hchg');
+      chg.append(el('span','hminus','−'+r.removed+' '));
+      chg.append(el('span','hplus','+'+r.added));
+      head.append(chg);
+    }
     const rb=el('button','hrev',t('revert'));
     rb.disabled=r.exists===false;
     rb.title=r.exists===false?t('history_missing'):t('revert');
     rb.onclick=async ev=>{ev.stopPropagation(); await revertHistory(r)};
-    head.append(chg, rb, el('span','hchev','▸'));
+    head.append(rb, el('span','hchev','▸'));
     const body=el('div','hbody');
     rec.append(head,body);
     head.onclick=async()=>{
@@ -952,12 +1000,12 @@ $('#hclear').onclick=async()=>{
   if(!confirm(t('clear_confirm')))return;
   const {ok,t:r}=await post('/api/history',{action:'clear'});
   const m=$('#hmaxmsg'); m.className=ok?'ok':'miss';
-  m.textContent=ok?t('history_cleared',{n:r.cleared}):(r.error||'error');
+  m.textContent=ok?(r.kept?t('history_cleared_anchor',{n:r.cleared}):t('history_cleared',{n:r.cleared})):(r.error||'error');
   if(getComputedStyle($('#win_history')).display==='flex') openHistory();
 };
 async function afterLoad(){
   rows=[];view=null;sel.clear();updCnt();$('#tree').innerHTML='';$('#title').textContent=t('choose_item');$('#q').value='';
-  orphTotal=0; if($('#orphmsg'))$('#orphmsg').textContent=''; if($('#orphclean'))$('#orphclean').style.display='none';
+  orphTotal=0; orphData=null; if($('#orphmsg'))$('#orphmsg').textContent=''; if($('#orphclean'))$('#orphclean').style.display='none';
   diskSel=null;updateDiskChip();
   await refreshStatus();await loadTypes();await loadList();refreshJf(true);refreshSvc();refreshPriv();refreshDisks();
 }

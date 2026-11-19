@@ -1,12 +1,64 @@
 # Version history — Jellyfin DB editor
 
-English translation of [`Wersje.md`](Wersje.md) (Polish source of truth).
+English version history.
 
-Scheme: **X.Y.Z** — `X` milestone, `Y` major feature, `Z` fix.
+Scheme: **X.Y.Z** — `X` main line / major change, `Y` new features, `Z` bugfix or very small change.
 Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; tags are immutable, commits are never deleted.
 Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`, internal analysis or runtime data. `v1.6.31` remains a full ZIP (legacy).
 
+## 1.7.x
+
+### 1.7.6 (2026-11-19)
+- **Version in the top bar:** the program version is shown next to the language code, with the same font, colour and size.
+- **Stable right corner:** the language and version stay fixed on the right; the `USER` / `SUDO` / `ADMIN` / `ROOT` badge appears to their left instead of shifting them.
+- Tests: 17/17; `v1.7.6` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.5 (2026-11-19)
+- **Safer orphan handling:** empty strings and the zero GUID are no longer treated as orphan references, so rows with a “no reference” sentinel are not deleted.
+- **Preview before cleaning:** “Clean orphans” shows up to three sample rows per table (values truncated, BLOBs masked) and the affected `table.column` list before changing the working copy.
+- Tests: 16/16; API tests now wait for the asynchronous database load before asserting. `v1.7.5` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.4 (2026-11-19)
+- **Setup no longer rejects a valid database on a read-only WAL check:** if SQLite cannot verify `BaseItems` because of WAL/SHM access, permissions, a lock or an I/O error, the path is accepted and validated again during the real load (the same mechanism as “Reload from original”).
+- A genuine non-Jellyfin SQLite database (no `BaseItems`, no WAL) is still rejected.
+- Tests: 14/14; `v1.7.4` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.3 (2026-11-19)
+- **Orphans in related tables:** `table.column` labels instead of duplicated table names.
+- **No double counting:** the per-table counter counts unique rows when several columns point to missing `BaseItems.Id` values (for example `AncestorIds`).
+- Tests: 11/11; `v1.7.3` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.2 (2026-11-18)
+- **Jellyfin version cache updated on every successful detection** — each detection overwrites the previous value; the newest one is used for anchor/Upload/Backup.
+- Tests: 11/11; `v1.7.2` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.1 (2026-11-18)
+- **Jellyfin version in history:** the last detected version is stored in the config and used for anchor/Upload/Backup entries when Jellyfin is stopped; falls back to previous entries.
+- If no version was ever detected, the entry stays “unknown” — the Jellyfin version cannot be read from the database file.
+- Tests: 10/10; `v1.7.1` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
+### 1.7.0 (2026-11-18)
+- **1.7.0 feature release** (1.6.33 was an interim release before the numbering rule changed).
+- Session anchor, optional history size limit, one `.bak` per session; default `.bak` limit = **10** (0 = off, max 10).
+- Tests: 10 tests; GitHub Actions Linux + Windows.
+- `v1.7.0` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
 ## 1.6.x
+
+### 1.6.33 (2026-11-18)
+- **Session anchor:** the first Upload creates a main session backup in history; it is protected until the process exits and skipped by limits and “Clear history”. After a restart it becomes a normal entry.
+- **Optional history size limit:** `history_max_size_mb` (0 = no limit), oldest entries removed first; the session anchor is not counted towards the limit.
+- **One `.bak` per session:** the first Upload with backup creates a `.bak`; later uploads do not; optional `bak_keep` (0 = no limit) keeps the N newest program-created `.bak` files, and the current session `.bak` is protected.
+- Tests: anchor, size limits, `.bak`; 9 tests total.
+- `v1.6.33` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
 
 ### 1.6.32 (2026-11-18)
 - **Automated tests in the repo:** `tests/` using `unittest` — auth/cookie, `Host`, pagination, problems, orphans, delete/upload/backup/history and the lightweight ZIP filter.
@@ -157,7 +209,7 @@ Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`
 - Fixed a translation key collision `backup_note` → `backup_manual_note` (the Backup button tooltip in History showed the description of the Upload `.bak` file).
 
 ### 1.6.3 (2026-11-16)
-- Documentation for 1.6.2 + new `Wersje.md` file (changelog grouped by version).
+- Documentation for 1.6.2 + a new changelog file grouped by version.
 
 ### 1.6.2 (2026-11-16)
 - **Backup in History**: a note and tooltip explaining that backups created with the Backup button are not removed automatically and do not count towards the history limit.
