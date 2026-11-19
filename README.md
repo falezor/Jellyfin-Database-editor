@@ -38,6 +38,8 @@ Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the s
 
 - **[README-extensive.md](README-extensive.md)** — full feature, configuration, API and limitations documentation.
 - **[Versions.md](Versions.md)** — English version history.
+- **[README-extensivePL.md](README-extensivePL.md)** — Polish translation of the extensive documentation.
+- **[Wersje.md](Wersje.md)** — Polish version history.
 
 ## License
 

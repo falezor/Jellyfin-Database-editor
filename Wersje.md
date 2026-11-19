@@ -1,11 +1,63 @@
 # Historia wersji — Jellyfin DB editor
 
-Schemat: **X.Y.Z** — `X` przełom, `Y` duża zmiana funkcjonalna, `Z` poprawka.
+Schemat: **X.Y.Z** — `X` główna linia / duża zmiana, `Y` dodanie funkcji, `Z` poprawka lub bardzo mała zmiana.
 Każda wersja ma tag `vX.Y.Z` oraz release GitHub z ZIP-em; tagi są niezmienne, commity nie są usuwane.
 ZIP release zawiera program, UI, README/licencję i changelogi — bez `DB/`, `potencjalne poprawki` i danych runtime. `v1.6.31` pozostaje pełnym ZIP-em (legacy).
 English translation: [`Versions.md`](Versions.md).
 
+## 1.7.x
+
+### 1.7.6 (2026-11-19)
+- **Wersja w górnym pasku:** obok oznaczenia języka widnieje wersja programu, z tą samą czcionką, kolorem i wielkością.
+- **Stały prawy róg:** język i wersja są nieruchome po prawej; plakietka `USER` / `SUDO` / `ADMIN` / `ROOT` pojawia się na lewo od nich, zamiast je przesuwać.
+- Testy: 17/17; release `v1.7.6` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.5 (2026-11-19)
+- **Bezpieczniejsze sieroty:** puste wartości i pusty GUID nie są już traktowane jako referencje do usunięcia, więc wiersze z wartością „brak powiązania” zostają.
+- **Podgląd przed czyszczeniem:** „Wyczyść sieroty” pokazuje do trzech przykładowych wierszy na tabelę (wartości skrócone, BLOB-y zamaskowane) oraz listę `tabela.kolumna` przed zmianą kopii roboczej.
+- Testy: 16/16; testy API czekają teraz na asynchroniczne wczytanie bazy. Release `v1.7.5` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.4 (2026-11-19)
+- **Setup nie odrzuca poprawnej bazy przy odczycie WAL w trybie read-only:** jeśli SQLite nie może sprawdzić `BaseItems` z powodu dostępu do WAL/SHM, uprawnień, blokady lub błędu I/O, ścieżka jest przyjmowana i weryfikowana ponownie przy właściwym wczytaniu (ten sam mechanizm co „Odśwież z oryginału”).
+- Prawdziwa baza inna niż Jellyfin (brak `BaseItems`, brak WAL) nadal jest odrzucana.
+- Testy: 14/14; release `v1.7.4` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.3 (2026-11-19)
+- **Sieroty w tabelach:** etykiety `tabela.kolumna` zamiast powielonych nazw tabel.
+- **Bez podwójnego liczenia:** licznik per tabela liczy unikalne wiersze, gdy kilka kolumn wskazuje brakujące `BaseItems.Id` (np. `AncestorIds`).
+- Testy: 11/11; release `v1.7.3` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.2 (2026-11-18)
+- **Cache wersji Jellyfina aktualizowany przy każdym udanym wykryciu** — kolejne wykrycie nadpisuje poprzednią wersję; najnowsza trafia do anchor/Upload/Backup.
+- Test: 11/11; release `v1.7.2` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.1 (2026-11-18)
+- **Wersja Jellyfina w historii:** ostatnio wykryta wersja jest zapisywana w configu i używana dla anchor/Upload/Backup, gdy Jellyfin jest zatrzymany; fallback z poprzednich wpisów.
+- Jeśli wersja nigdy nie została wykryta, wpis pozostaje „nieznany” — wersji Jellyfina nie da się odczytać z pliku bazy.
+- Testy: 10/10; release `v1.7.1` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
+### 1.7.0 (2026-11-18)
+- **Wydanie funkcji 1.7.0** (1.6.33 było wydaniem pośrednim przed zmianą numeracji).
+- Anchor sesji, opcjonalny limit rozmiaru historii, jeden `.bak` na sesję; domyślny limit `.bak` = **10** (0 = off, maks. 10).
+- Testy: 10 testów; GitHub Actions Linux + Windows.
+- Release `v1.7.0` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
 ## 1.6.x
+
+### 1.6.33 (2026-11-18)
+- **Anchor sesji:** pierwszy Upload tworzy główny backup sesji w historii; jest chroniony do końca procesu i pomijany przez limity oraz „Wyczyść historię”. Po restarcie staje się zwykłym wpisem.
+- **Opcjonalny limit rozmiaru historii:** `history_max_size_mb` (0 = bez limitu), usuwanie od najstarszych; anchor sesji nie liczy się do limitu.
+- **Jeden `.bak` na sesję:** pierwszy Upload z backupem tworzy `.bak`, kolejne już nie; opcjonalny `bak_keep` (0 = bez limitu) zostawia N najnowszych `.bak` programu, a bieżący `.bak` sesji jest chroniony.
+- Testy: anchor, limity rozmiaru, `.bak`; łącznie 9 testów.
+- Release `v1.6.33` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
 
 ### 1.6.32 (2026-11-18)
 - **Testy automatyczne w repo:** `tests/` na `unittest` — auth/cookie, `Host`, paginacja, problemy, sieroty, delete/upload/backup/historia i filtr lekkiego ZIP-a.

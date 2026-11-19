@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 18 listopada 2026, **wersja 1.6.32** (tag `v1.6.32`, lokalne repo git).
+Stan na 19 listopada 2026, **wersja 1.7.6** (tag `v1.7.6`, lokalne repo git).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -75,7 +75,8 @@ Przy pierwszym uruchomieniu (brak `data_dir` w ustawieniach) pokazuje się **okn
 - walidacja: odrzuca katalog główny dysku (`D:\`, `/`) i katalog domowy; pozwala utworzyć nowy folder; sprawdza prawo zapisu,
 - po zapisie tworzy strukturę i zapisuje `data_dir` w ustawieniach,
 - **wykrywa domyślne bazy Jellyfina** (Windows: `%ProgramData%\Jellyfin\Server\data`, `%LOCALAPPDATA%\jellyfin\data`, `%APPDATA%\Jellyfin\Server\data`; Linux: `/var/lib/jellyfin/data`, `/config/data`, `/data`, `~/jellyfin/data`, folder programu) i pokazuje, czy którąś znaleziono,
-- pozwala **wskazać plik `jellyfin.db`** (ścieżka lub okno systemowe); wybór zapisywany jest jako `db_path` w configu i używany do automatycznego wczytania przy kolejnych startach (także gdy baza leży poza standardowym folderem, np. na Windows z własnym folderem danych).
+- pozwala **wskazać plik `jellyfin.db`** (ścieżka lub okno systemowe); wybór zapisywany jest jako `db_path` w configu i używany do automatycznego wczytania przy kolejnych startach (także gdy baza leży poza standardowym folderem, np. na Windows z własnym folderem danych),
+- jeśli szybki odczyt read-only nie widzi `BaseItems` z powodu uprawnień do `-wal`/`-shm`, blokady lub błędu I/O, ścieżka jest przyjmowana i weryfikowana ponownie przy tworzeniu kopii roboczej (ten sam mechanizm co „Odśwież z oryginału”); prawdziwy plik SQLite spoza Jellyfina nadal jest odrzucany.
 
 ```
 <data_dir>/
@@ -178,13 +179,13 @@ Trzystanowe istnienie pliku: `True` / `False` / `None` (brak uprawnień). `None`
 
 ## 7. Interfejs
 
-**Menu górne:** `Jellyfin DB editor` · Ustawienia · Połączenie · Historia · SQL · Języki ▾ (przełączanie na żywo, zapamiętywane w `localStorage`; przy pierwszym uruchomieniu język z przeglądarki) · 🛠 **Setup** — ponowne otwarcie konfiguracji (folder danych + baza `jellyfin.db`), z możliwością anulowania; przydatne, gdy ścieżki zostały źle ustawione. Obok oznaczenia języka mała plakietka **USER / SUDO / ADMIN / ROOT** pokazuje aktywny tryb uprawnień; na Windows `ADMIN` tylko przy procesie uruchomionym z podniesionymi uprawnieniami (UAC), na Linuksie `SUDO` po aktywacji trybu ADMIN, na macOS `ADMIN` dla członka grupy admin lub `SUDO` przy aktywnej sesji; przy nieznanej platformie plakietka jest ukryta.
+**Menu górne:** `Jellyfin DB editor` · Ustawienia · Połączenie · Historia · SQL · Języki ▾ (przełączanie na żywo, zapamiętywane w `localStorage`; przy pierwszym uruchomieniu język z przeglądarki) · 🛠 **Setup** — ponowne otwarcie konfiguracji (folder danych + baza `jellyfin.db`), z możliwością anulowania; przydatne, gdy ścieżki zostały źle ustawione. W prawym górnym rogu stale widoczne są oznaczenie języka i wersja programu; mała plakietka **USER / SUDO / ADMIN / ROOT** pokazuje aktywny tryb uprawnień i pojawia się na lewo od nich, nie przesuwając języka ani wersji. Na Windows `ADMIN` tylko przy procesie uruchomionym z podniesionymi uprawnieniami (UAC), na Linuksie `SUDO` po aktywacji trybu ADMIN, na macOS `ADMIN` dla członka grupy admin lub `SUDO` przy aktywnej sesji; przy nieznanej platformie plakietka jest ukryta.
 
 **Lewy panel:** kategoria (biblioteki lub typy + kategorie ostrzegawcze), sortowanie, „Wszystkie problemy", wyszukiwanie, chip filtra dysku (`Disk: … ✕`), lista pozycji (miniatura, nazwa, ścieżka, powody), przycisk **Pokaż więcej** (gdy wyników jest więcej niż pobrane 2000; kolejne porcje po 2000, bez górnego limitu — do końca wyników), na dole przycisk **Upload** (ikona ⬆ + pogrubione „Upload" + mniejszy opis).
 
 **Prawy panel:** tytuł, „Zaznacz problemy" + checkbox **„wszystkie dyski"**, „Zaznacz wszystko", „Wyczyść", **Delete selected (N)**, „lub", **SQL script manual (N)** (oba czerwone), tabela drzewa.
 
-**Ustawienia:** status bazy (przy braku bazy **czerwony** komunikat „Baza nie wczytana" z powodem), folder danych, odświeżenie, kopia zapasowa, wczytywanie ścieżki/pliku (także systemowe okno wyboru; bez sudo, anulowanie nie blokuje UI), eksport, sekcja **Sieroty w tabelach powiązanych** (sprawdzenie + czyszczenie z pominięciem `UserData`), sekcja **Dyski** (liczniki + filtr + „Sprawdź ponownie"; bez bazy pokazuje komunikat i wyłącza odświeżanie), sekcja historii (limit + ostrzeżenie o miejscu + czyszczenie).
+**Ustawienia:** status bazy (przy braku bazy **czerwony** komunikat „Baza nie wczytana" z powodem), folder danych, odświeżenie, kopia zapasowa, wczytywanie ścieżki/pliku (także systemowe okno wyboru; bez sudo, anulowanie nie blokuje UI), eksport, sekcja **Sieroty w tabelach powiązanych** (sprawdzenie + podgląd próbek + czyszczenie z pominięciem `UserData`), sekcja **Dyski** (liczniki + filtr + „Sprawdź ponownie"; bez bazy pokazuje komunikat i wyłącza odświeżanie), sekcja historii (limit + ostrzeżenie o miejscu + czyszczenie).
 
 **Połączenie:** status Jellyfina (zielony przy działającym), „Sprawdź ponownie", port, lista dysków (bez klikania/liczników), start/stop usługi, tryb ADMIN. Przy każdym starcie Jellyfina — także z okna Połączenie — w pasku pojawia się na chwilę subtelny komunikat „Jellyfin za chwilę wystartuje…" (między tytułem a „Zaznacz problemy"), znikający po wykryciu działania.
 
@@ -214,22 +215,25 @@ Limity: lista jest stronicowana po 2 000 (`Pokaż więcej` do końca wyników, A
   - root pomarańczowy → przechodzi, ale UI ostrzega.
 - **Prompt „usuń mimo to"** pojawia się tylko w dwóch miejscach: przy **Delete selected** i przed wygenerowaniem **SQL script manual** (anulowanie = brak operacji).
 - **„Zaznacz problemy"** domyślnie pomija wpisy z czerwonych dysków; checkbox „wszystkie dyski" zaznacza bez wyjątku.
-- Usuwane są tylko wiersze `BaseItems` (bez kaskady; tak jak ręczne `sqlite3`). Usunięcie serii nie usuwa sezonów/odcinków — użyć „Zaznacz wszystko" w jej drzewie. Sieroty w tabelach powiązanych można wyczyścić osobno w Ustawieniach (sekcja **Sieroty w tabelach powiązanych**, `UserData` jest pomijane).
+- Usuwane są tylko wiersze `BaseItems` (bez kaskady; tak jak ręczne `sqlite3`). Usunięcie serii nie usuwa sezonów/odcinków — użyć „Zaznacz wszystko" w jej drzewie. Sieroty w tabelach powiązanych można wyczyścić osobno w Ustawieniach (sekcja **Sieroty w tabelach powiązanych**, `UserData` jest pomijane; kolumny są pokazywane jako `tabela.kolumna`, a każdy wiersz tabeli liczy się raz). Puste wartości i pusty GUID nie są traktowane jako sieroty, a przed czyszczeniem pokazywane są przykładowe wiersze.
 - „SQL script manual" generuje `systemctl stop/start` albo `docker stop/start` (zależnie od wykrytej usługi), `sqlite3 … DELETE … IN (…)`, `SELECT changes(); COMMIT;`; na Windows są komentarze zamiast `sudo`/usługi systemd.
 
 ## 9. Upload
 
 Front: sprawdzenie Jellyfina (propozycja zatrzymania), monit o sudo, potwierdzenie, potem pytanie o start Jellyfina.
 
-Serwer: odmowa dla bazy „z komputera" i bez zmian; blokada przy działającym Jellyfinie (systemd lub port; `--no-service-check` pomija); wymóg zapisu; **rebase** przy zmienionej sygnaturze; opcjonalna kopia zapasowa `<baza>-RRRR-MM-DD_GG-MM-SS.bak` tworzona z **żywego pliku** (kopia + `-wal`/`-shm`, ponowna kontrola sygnatury przed podmianą); `quick_check`; **walidacja schematu** (porównanie tabel nowej bazy z oryginałem — brakujące tabele = blokada z `force_schema`); atomowa podmiana z zachowaniem właściciela/uprawnień; usunięcie starych `-wal`/`-shm`; **wpis do historii** (diff `orig` vs working copy) i ponowne wczytanie kopii roboczej.
+Serwer: odmowa dla bazy „z komputera" i bez zmian; blokada przy działającym Jellyfinie (systemd lub port; `--no-service-check` pomija); wymóg zapisu; **rebase** przy zmienionej sygnaturze; **pierwszy Upload w sesji** tworzy anchor i opcjonalny `.bak` `<baza>-RRRR-MM-DD_GG-MM-SS.bak` z **żywego pliku** (kopia + `-wal`/`-shm`, ponowna kontrola sygnatury przed podmianą; kolejne Uploady nie tworzą nowych `.bak`); `quick_check`; **walidacja schematu** (porównanie tabel nowej bazy z oryginałem — brakujące tabele = blokada z `force_schema`); atomowa podmiana z zachowaniem właściciela/uprawnień; usunięcie starych `-wal`/`-shm`; **wpis do historii** (diff `orig` vs working copy) i ponowne wczytanie kopii roboczej.
 
 ## 10. Historia
 
 - Każdy Upload zapisuje pełną kopię wgranej bazy w `<data_dir>/history/<id>/<nazwa bazy>` oraz wpis w `index.json` (id, data, wersja Jellyfina z UI, liczniki i listy `−`/`+`, rozmiar). `tmp/` służy wyłącznie do plików sesji i jest czyszczone przy zamknięciu.
-- Limit: `history_max` 1–50 (domyślnie 5). Zmiana limitu przycina najstarsze wpisy razem z plikami. Każdy wpis to pełna kopia bazy — większy limit zajmuje więcej miejsca.
+- Wersja Jellyfina jest aktualizowana przy **każdym udanym wykryciu**; najnowsza wartość jest używana dla nowych wpisów, gdy serwer jest zatrzymany. Jeśli nigdy jej nie wykryto, wpis pokazuje „wersja nieznana” (wersji nie ma w pliku bazy).
+- **Pierwszy Upload w sesji** tworzy chroniony **główny backup sesji (anchor)**. Jest pomijany przez limity i „Wyczyść historię” do końca procesu; po restarcie staje się zwykłym wpisem do usunięcia.
+- Limit: `history_max` 1–50 (domyślnie 5). Opcjonalny limit rozmiaru (`history_max_size_mb`, 0 = off) usuwa najstarsze zwykłe wpisy; anchor sesji nie liczy się do limitu.
 - **Revert** przywraca wybrany wpis jak Upload: te same testy (Jellyfin zatrzymany, uprawnienia, opcjonalny backup), walidacja schematu, `quick_check`, atomowa podmiana, przeładowanie kopii roboczej. Revert nie tworzy nowego wpisu historii.
 - Brak pliku kopii: oznaczany przy dacie (`⚠ brak pliku`), Restore zablokowany; przy starcie lista braków trafia do konsoli.
-- Czyszczenie całej historii z potwierdzeniem (nieodwracalne). Historia przeżywa restart programu; sesyjne `tmp/jfdb_*` są usuwane przy wyjściu, a pozostałe po awarii i starsze niż 24 h — automatycznie przy starcie.
+- Czyszczenie całej historii z potwierdzeniem (nieodwracalne, z wyjątkiem anchora sesji). Historia przeżywa restart programu; sesyjne `tmp/jfdb_*` są usuwane przy wyjściu, a pozostałe po awarii i starsze niż 24 h — automatycznie przy starcie.
+- **Pliki `.bak`:** pierwszy Upload z backupem w sesji tworzy jeden `.bak`, kolejne już nie. Opcjonalny `bak_keep` zostawia N najnowszych plików programu `<baza>-*.bak`; domyślnie **10**, 0 = off, maks. 10. Bieżący `.bak` sesji jest chroniony, a ręczne kopie w `backups/` nie są ruszane.
 
 ## 11. Wczytywanie i eksport
 
@@ -278,7 +282,7 @@ GET-y `/api/*` i `/img` wymagają ciasteczka sesji ustawianego przez `/` (HttpOn
 | `/api/sqljob` | GET | – | postęp importu SQL (faza, bajty) |
 | `/api/import-sql` | POST | tak | surowy dump SQL / `.sql.gz` (`X-Filename`) |
 | `/api/export-sql` | GET / POST | `?t=` / pole `t` | dump SQL (`gz=1` → `.sql.gz`); POST jak wyżej |
-| `/api/orphans` | GET / POST | POST | sieroty w tabelach powiązanych; POST `{clean:true}` usuwa i zwraca `removed`/`total` |
+| `/api/orphans` | GET / POST | POST | sieroty w tabelach powiązanych; GET zwraca próbki, POST `{clean:true}` usuwa i zwraca `removed`/`total` |
 | `/api/settings` | POST | tak | `history_max`, `data_dir` |
 | `/api/delete` | POST | tak | `ids`, `force` |
 | `/api/upload` | POST | tak | `backup`, `ver` → wpis historii |
@@ -335,7 +339,7 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 17. Znane ograniczenia
 
-- Sieroty w tabelach powiązanych nie są usuwane automatycznie razem z `BaseItems` — trzeba użyć osobnej sekcji w Ustawieniach (pomija `UserData`).
+- Sieroty w tabelach powiązanych nie są usuwane automatycznie razem z `BaseItems` — trzeba użyć osobnej sekcji w Ustawieniach (pomija `UserData`, ignoruje puste wartości/pusty GUID i pokazuje próbki przed czyszczeniem).
 - Kontrola dysków działa tam, gdzie te same ścieżki istnieją (serwer/kontener); przy bazie z innej maszyny bez `/proc` statusy są „nie sprawdzono". Na Linuksie (są montowania) brak dostępu do folderów daje czerwony/pomarańczowy, a nie szary.
 - Program i Jellyfin w różnych przestrzeniach montowania (host vs kontener) → ścieżki kontenera mogą wyjść jako „brak" (chroni blokada usuwania).
 - macOS: brak `/proc` — nie wykryje odłączonego wolumenu, tylko brak folderu.
@@ -361,4 +365,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — przełom, `Y` — duża zmiana funkcjonalna, `Z` — poprawka/rozszerzenie (także powyżej 10: 1.6.25). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.6.32`; pełna lista w `Wersje.md`. Wersję `1.7.0` rezerwujemy na duże zmiany (np. pakowanie AppImage).
+Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `1.7.1`). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.7.6`; pełna lista w `Wersje.md`. Kolejna funkcja to `1.8.0`, a następna poprawka do tej linii to `1.7.7`.

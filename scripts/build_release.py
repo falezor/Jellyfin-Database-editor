@@ -12,12 +12,9 @@ import zipfile
 
 GIT = 'git'
 TOP_FILES = ('.gitattributes', '.gitignore', 'LICENSE', 'jf_browser.py', 'i18n.py')
-EXCLUDE = ('Wersje.md', 'README-extensivePL.md')
 
 
 def included(path):
-    if path in EXCLUDE:
-        return False
     if path in TOP_FILES:
         return True
     if '/' not in path and path.endswith('.md'):
