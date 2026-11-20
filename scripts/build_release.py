@@ -24,7 +24,7 @@ def included(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('tag', help='tag to package, e.g. v1.6.31')
+    ap.add_argument('tag', help='tag to package, e.g. v0.7.6')
     ap.add_argument('-o', '--out', help='output ZIP path')
     args = ap.parse_args()
     tag = args.tag

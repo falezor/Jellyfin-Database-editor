@@ -422,7 +422,7 @@ The language can be changed in the top menu or on the “Database not loaded” 
 - SQL import without the `sqlite3` CLI uses the slower built-in parser.
 - In LIMITED mode, thumbnails from protected folders may not be displayed.
 - Problem sorting on very large libraries may be slower — it analyses all matching rows.
-- AppImage/EXE packaging is not ready yet; it is planned for `1.7.0`.
+- AppImage/EXE packaging is not ready yet; it is planned for a future 0.x release.
 - macOS and some service-control features have not been tested on a live system.
 
 ---
