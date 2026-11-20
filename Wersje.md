@@ -5,6 +5,13 @@ Każda wersja ma tag `vX.Y.Z` oraz release GitHub z ZIP-em; tagi są niezmienne,
 ZIP release zawiera program, UI, README/licencję i changelogi — bez `DB/`, `potencjalne poprawki` i danych runtime. `v1.6.31` pozostaje pełnym ZIP-em (legacy).
 English translation: [`Versions.md`](Versions.md).
 
+## 0.7.x
+
+### 0.7.6 (2026-11-20)
+- **Reset numeracji:** publiczna linia main używa teraz 0.x.x. To wydanie jest funkcjonalnie takie samo jak poprzednie 1.7.6. Starsze tagi 1.x pozostają w historii git, ale nie są już widoczne jako release'y GitHub.
+- Release `v0.7.6` z lekkim ZIP-em.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
 ## 1.7.x
 
 ### 1.7.6 (2026-11-19)

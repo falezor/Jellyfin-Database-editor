@@ -1,6 +1,6 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 1.7.6 (2026-11-19)  
+**Version:** 0.7.6 (2026-11-20)  
 This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md).
 
 ---
@@ -429,8 +429,8 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **1.7.6**.
-- Version scheme: `X` — main line / major change, `Y` — new features, `Z` — bugfixes or very small changes. The next feature release is `1.8.0`; the next fix for this line is `1.7.7`.
+- Current version: **0.7.6**.
+- Version scheme: `X.Y.Z`; from 0.7.6 the public line uses 0.x.x. The next feature release is `0.8.0`; the next fix for this line is `0.7.7`.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
 - Build a release archive with `python scripts/build_release.py vX.Y.Z`.

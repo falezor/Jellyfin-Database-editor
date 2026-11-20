@@ -6,6 +6,13 @@ Scheme: **X.Y.Z** — `X` main line / major change, `Y` new features, `Z` bugfix
 Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; tags are immutable, commits are never deleted.
 Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`, internal analysis or runtime data. `v1.6.31` remains a full ZIP (legacy).
 
+## 0.7.x
+
+### 0.7.6 (2026-11-20)
+- **Versioning reset:** the public main line now uses 0.x.x. This release is functionally the same as the previous 1.7.6 release. Earlier 1.x tags remain in git history, but are no longer listed as GitHub releases.
+- `v0.7.6` GitHub release with a lightweight ZIP asset.
+- Documentation update: the changes above.
+
 ## 1.7.x
 
 ### 1.7.6 (2026-11-19)

@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 19 listopada 2026, **wersja 1.7.6** (tag `v1.7.6`, lokalne repo git).
+Stan na 20 listopada 2026, **wersja 0.7.6** (tag `v0.7.6`, lokalne repo git).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -365,4 +365,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `1.7.1`). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.7.6`; pełna lista w `Wersje.md`. Kolejna funkcja to `1.8.0`, a następna poprawka do tej linii to `1.7.7`.
+Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `1.7.1`). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Historia: `v1.1.0` → `v1.7.6`; od `0.7.6` numeracja 0.x. Pełna lista w `Wersje.md`. Kolejna funkcja to `0.8.0`, a następna poprawka do tej linii to `0.7.7`.
