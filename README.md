@@ -5,10 +5,15 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
 ## Features
 
 - browse libraries, item types, series and movies, with search and per-disk filtering,
+- edit basic and advanced metadata (Data JSON, path, hierarchy) from a double-click dialog in the list or series tree,
 - **orphan cleaning for related tables** — preview sample rows, skip `UserData`, and ignore empty/zero-GUID references,
+- **change the program data folder from Settings** — moves history and backups with progress,
 - detect missing files, unmounted or detached disks, duplicates, orphaned items and orphaned rows in related tables,
 - safely delete items from a working copy, with protection for unavailable disks,
 - **Upload** and **Revert** with a backup, version history and schema validation,
+- restore manual backups with the same safeguards as Upload,
+- save a separate working-copy backup from the right panel,
+- stop Jellyfin automatically before Upload/Restore/original backup, with an optional no-confirmation mode,
 - import/export SQL, export the full database as `.db`, and generate a manual SQL cleanup script,
 - **8 interface languages**, portable configuration, Linux and Windows support (macOS untested).
 
@@ -37,9 +42,8 @@ Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the s
 ## Documentation
 
 - **[README-extensive.md](README-extensive.md)** — full feature, configuration, API and limitations documentation.
-- **[Versions.md](Versions.md)** — English version history.
-- **[README-extensivePL.md](README-extensivePL.md)** — Polish translation of the extensive documentation.
-- **[Wersje.md](Wersje.md)** — Polish version history.
+- **[Versions.md](Versions.md)** - English version history.
+- `README-extensivePL.md` — extensive documentation in Polish.
 
 ## License
 

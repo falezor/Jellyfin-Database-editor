@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import jf_browser as j
 
@@ -62,6 +63,45 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(j.get_authorized(h2, {}))
         self.assertTrue(j.get_authorized(FakeRequest(), {'t': ['0123456789abcdef0123456789abcdef']}))
         self.assertFalse(j.get_authorized(FakeRequest(), {}))
+
+
+class JfStopGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.old = j.CFG.get('service_check')
+
+    def tearDown(self):
+        j.CFG['service_check'] = self.old
+
+    def test_service_check_off_never_blocks(self):
+        j.CFG['service_check'] = False
+        with mock.patch.object(j, 'jf_detect',
+                               side_effect=AssertionError('must not probe')):
+            j.ensure_jf_stopped()
+
+    def test_running_port_blocks(self):
+        j.CFG['service_check'] = True
+        detected = {'state': 'running', 'port': 8096, 'info': {'Version': '10.10.7'}}
+        with mock.patch('jf_browser.shutil.which', return_value=None), \
+                mock.patch.object(j, 'jf_detect', return_value=detected):
+            with self.assertRaisesRegex(RuntimeError, '8096'):
+                j.ensure_jf_stopped()
+
+    def test_active_systemd_unit_blocks_without_probe(self):
+        j.CFG['service_check'] = True
+        done = mock.Mock(returncode=0)
+        with mock.patch('jf_browser.shutil.which', return_value='/usr/bin/systemctl'), \
+                mock.patch('jf_browser.subprocess.run', return_value=done), \
+                mock.patch.object(j, 'jf_detect',
+                                  side_effect=AssertionError('must not probe')):
+            with self.assertRaises(RuntimeError):
+                j.ensure_jf_stopped()
+
+    def test_stopped_jellyfin_is_allowed(self):
+        j.CFG['service_check'] = True
+        detected = {'state': 'off', 'port': 8096, 'info': None}
+        with mock.patch('jf_browser.shutil.which', return_value=None), \
+                mock.patch.object(j, 'jf_detect', return_value=detected):
+            j.ensure_jf_stopped()
 
 
 class BakRetentionTests(unittest.TestCase):
@@ -214,6 +254,78 @@ class VersionTests(unittest.TestCase):
         match = re.search(r'^### (\d+\.\d+\.\d+)', text, re.M)
         self.assertIsNotNone(match)
         self.assertEqual(j.APP_VERSION, match.group(1))
+
+
+class DataDirChangeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='jfdata_')
+        self.old = os.path.join(self.tmp, 'old')
+        self.new = os.path.join(self.tmp, 'new')
+        os.makedirs(os.path.join(self.old, 'history', '20260101-000000'))
+        os.makedirs(os.path.join(self.old, 'backups'))
+        with open(os.path.join(self.old, 'history', 'index.json'), 'w', encoding='utf-8') as f:
+            f.write('[]')
+        with open(os.path.join(self.old, 'history', '20260101-000000', 'jellyfin.db'), 'wb') as f:
+            f.write(b'db')
+        with open(os.path.join(self.old, 'backups', 'index.json'), 'w', encoding='utf-8') as f:
+            f.write('[]')
+        with open(os.path.join(self.old, 'backups', 'manual.db'), 'wb') as f:
+            f.write(b'bak')
+        self.old_data = j.DATA_DIR
+        self.old_setting = j.SETTINGS.get('data_dir')
+        self.old_save = j.save_settings
+        self.old_state = {k: j.STATE.get(k) for k in
+                          ('con', 'tmp', 'src', 'kind', 'dirty', 'setup', 'job', 'loading')}
+        j.save_settings = lambda: True
+        j.configure_data_dir(self.old)
+        j.SETTINGS['data_dir'] = self.old
+        j.STATE.update(con=None, tmp=None, src='', kind='path', dirty=0, setup=False)
+
+    def tearDown(self):
+        j.configure_data_dir(self.old_data)
+        j.SETTINGS['data_dir'] = self.old_setting
+        j.save_settings = self.old_save
+        for k, v in self.old_state.items():
+            j.STATE[k] = v
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_moves_history_and_backups(self):
+        result = j.change_data_dir(self.new, force=True)
+        self.assertEqual(result['data_dir'], os.path.abspath(self.new))
+        self.assertEqual(result['moved'], {'history': 2, 'backups': 2})
+        self.assertFalse(result['reloaded'])
+        self.assertTrue(os.path.isfile(os.path.join(self.new, 'history', 'index.json')))
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.new, 'history', '20260101-000000', 'jellyfin.db')))
+        self.assertTrue(os.path.isfile(os.path.join(self.new, 'backups', 'index.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.new, 'backups', 'manual.db')))
+        self.assertFalse(os.path.exists(os.path.join(self.old, 'history')))
+        self.assertFalse(os.path.exists(os.path.join(self.old, 'backups')))
+        self.assertEqual(j.SETTINGS['data_dir'], os.path.abspath(self.new))
+
+    def test_refuses_non_empty_target(self):
+        os.makedirs(os.path.join(self.new, 'history'))
+        with open(os.path.join(self.new, 'history', 'keep.db'), 'wb') as f:
+            f.write(b'x')
+        with self.assertRaises(ValueError):
+            j.change_data_dir(self.new, force=True)
+        self.assertTrue(os.path.isfile(os.path.join(self.old, 'history', 'index.json')))
+        self.assertEqual(j.SETTINGS['data_dir'], self.old)
+
+    def test_refuses_nested_target(self):
+        with self.assertRaises(ValueError):
+            j.change_data_dir(os.path.join(self.old, 'nested'), force=True)
+
+    def test_refuses_upload_database(self):
+        j.STATE.update(kind='upload', con=object())
+        with self.assertRaises(ValueError):
+            j.change_data_dir(self.new, force=True)
+
+    def test_requires_force_when_dirty(self):
+        j.STATE['dirty'] = 2
+        with self.assertRaises(ValueError):
+            j.change_data_dir(self.new)
+        self.assertEqual(j.SETTINGS['data_dir'], self.old)
 
 
 class OrphanHelperTests(unittest.TestCase):

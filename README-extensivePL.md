@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 20 listopada 2026, **wersja 0.7.6** (tag `v0.7.6`, lokalne repo git).
+Stan na 20 listopada 2026, **wersja 0.9.0** (tag `v0.9.0`).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -95,6 +95,10 @@ Ustawienia (`jf_port`, `jf_service`, `history_max`, `data_dir`, `db_path`, `disk
 
 **Wymóg dla pakowania (AppImage/EXE/inne):** zachowanie musi być identyczne — config obok programu, pierwsze uruchomienie nowej wersji = setup, dane tworzone w wybranej lokalizacji. Docelowo (do zrobienia później) **instalator**: wykrywa ścieżkę instalacji, nadpisuje pliki programu, **importuje setup** z poprzedniej wersji (`data_dir`, `db_path`, `jf_port`, `jf_service`, `history_max`, `disk_map`) i uwzględnia zmiany.
 
+### Zmiana folderu danych
+
+Ustawienia → **Zmień folder danych…** przenosi `history/` i `backups/` programu do nowej lokalizacji i odtwarza tam `tmp/` po ponownym wczytaniu bazy. Folder docelowy musi być zapisywalny, nie może być głównym katalogiem dysku ani katalogiem domowym i nie może leżeć wewnątrz obecnego folderu danych (ani go zawierać). Historia i backupy są przenoszone z postępem; docelowe `history/` i `backups/` muszą być puste. Jeśli baza jest wczytana ze ścieżki, po przeniesieniu jest ponownie wczytywana z oryginału, a niezapisane zmiany kopii roboczej są odrzucane. Bazę wczytaną z pliku (tryb upload) trzeba najpierw wyeksportować albo wczytać ze ścieżki. Plik `jellyfin.db` i pliki mediów nie są przenoszone.
+
 ## 4. Model pracy i bezpieczeństwa
 
 1. Przeglądanie i usuwanie dotyczy wyłącznie `work.db`.
@@ -185,13 +189,17 @@ Trzystanowe istnienie pliku: `True` / `False` / `None` (brak uprawnień). `None`
 
 **Prawy panel:** tytuł, „Zaznacz problemy" + checkbox **„wszystkie dyski"**, „Zaznacz wszystko", „Wyczyść", **Delete selected (N)**, „lub", **SQL script manual (N)** (oba czerwone), tabela drzewa.
 
-**Ustawienia:** status bazy (przy braku bazy **czerwony** komunikat „Baza nie wczytana" z powodem), folder danych, odświeżenie, kopia zapasowa, wczytywanie ścieżki/pliku (także systemowe okno wyboru; bez sudo, anulowanie nie blokuje UI), eksport, sekcja **Sieroty w tabelach powiązanych** (sprawdzenie + podgląd próbek + czyszczenie z pominięciem `UserData`), sekcja **Dyski** (liczniki + filtr + „Sprawdź ponownie"; bez bazy pokazuje komunikat i wyłącza odświeżanie), sekcja historii (limit + ostrzeżenie o miejscu + czyszczenie).
+**Ustawienia:** status bazy (przy braku bazy **czerwony** komunikat „Baza nie wczytana" z powodem), folder danych + **Zmień folder danych…**, odświeżenie, kopia zapasowa, wczytywanie ścieżki/pliku (także systemowe okno wyboru; bez sudo, anulowanie nie blokuje UI), eksport, sekcja **Sieroty w tabelach powiązanych** (sprawdzenie + podgląd próbek + czyszczenie z pominięciem `UserData`), sekcja **Dyski** (liczniki + filtr + „Sprawdź ponownie"; bez bazy pokazuje komunikat i wyłącza odświeżanie), sekcja historii (limit + ostrzeżenie o miejscu + czyszczenie).
 
-**Połączenie:** status Jellyfina (zielony przy działającym), „Sprawdź ponownie", port, lista dysków (bez klikania/liczników), start/stop usługi, tryb ADMIN. Przy każdym starcie Jellyfina — także z okna Połączenie — w pasku pojawia się na chwilę subtelny komunikat „Jellyfin za chwilę wystartuje…" (między tytułem a „Zaznacz problemy"), znikający po wykryciu działania.
+**Edycja wpisów:** dwuklik na wierszu listy lub dowolnym rekordzie w widoku serialu/drzewa otwiera edytor. Pola podstawowe: `Name`, `SortName`, `ProductionYear`, `IndexNumber`, `ParentIndexNumber`, `SeriesName`. Checkbox **Zaawansowane** odsłania `Path`, `Data` JSON, `ParentId`, `TopParentId`, `SeriesId`, `SeasonId`, `PrimaryVersionId` oraz `ForcedSortName`/`OriginalTitle`, jeśli te kolumny istnieją. `Data` musi być obiektem JSON; referencje hierarchii muszą istnieć, a `ParentId` nie może utworzyć cyklu. `Id` i `Type` pozostają tylko do odczytu. Wartości są walidowane i zapisywane w transakcji w kopii roboczej; każdy zmieniony wpis liczy się raz, a historia Uploadów zapisuje edycje osobno od usunięć. Zmiany zaawansowane mogą uszkodzić Jellyfin i mogą zostać nadpisane przy odświeżeniu metadanych — zrób kopię zapasową. Jeśli oryginał zmieni się przed Uploadem, program nie przemapuje edycji po cichu — trzeba wczytać bazę ponownie i powtórzyć edycję.
+
+**Połączenie:** status Jellyfina (zielony przy działającym), „Sprawdź ponownie", port, lista dysków (bez klikania/liczników), start/stop usługi, opcja **„Automatycznie zatrzymuj i uruchamiaj Jellyfin (bez potwierdzeń)”** i tryb ADMIN. Opcja pomija pytania stop/start przy Uploadzie, Przywracaniu, backupie oryginału i ręcznym przycisku **Stop**; sam stop nadal jest wykonywany. Przy każdym starcie Jellyfina — także z okna Połączenie — w pasku pojawia się na chwilę subtelny komunikat „Jellyfin za chwilę wystartuje…" (między tytułem a „Zaznacz problemy"), znikający po wykryciu działania.
 
 **Historia:** dwie sekcje:
 - **automatyczne** — wpisy z Uploadów (wersja, data, `−N +M`, `⚠ brak pliku`), rozwijane szczegóły, **Restore**;
-- **Ręczne kopie** (na dole, przycisk **Backup**) — pełne kopie w `<data_dir>/backups/`, poza limitem historii; wpis pokazuje wersję, datę i rozmiar, a po rozwinięciu **różnice względem aktualnie wczytanej bazy**: `+N` (w kopii, brak w bazie) na zielono i `−N` (w bazie, brak w kopii) na czerwono — z listą pozycji. Backup pokazuje **postęp procentowy**. Każdy wpis ma **kosz** (usunięcie pojedynczej kopii z potwierdzeniem). „Wyczyść historię" w Ustawieniach usuwa **tylko automatyczną historię** — ręczne kopie zostają.
+- **Ręczne kopie** (na dole, przycisk **Backup**) — pełne kopie w `<data_dir>/backups/`, poza limitem historii; wpis pokazuje wersję, datę i rozmiar, a po rozwinięciu **różnice względem aktualnie wczytanej bazy**: `+N` (w kopii, brak w bazie) na zielono i `−N` (w bazie, brak w kopii) na czerwono — z listą pozycji. Backup pokazuje **postęp procentowy**. Każdy wpis ma **Przywróć** (podmiana oryginału tą kopią, z tymi samymi zabezpieczeniami co Upload: usługa, uprawnienia, schemat, `quick_check`) oraz **kosz** (usunięcie pojedynczej kopii z potwierdzeniem). Backup kopiuje **żywy oryginał** bazy (wraz z `-wal`/`-shm`); w trybie upload, gdzie nie ma ścieżki oryginału, kopiuje kopię roboczą. Przed backupem oryginału Jellyfin **musi być zatrzymany** — program robi to sam i po zakończeniu proponuje ponowne uruchomienie (albo robi to automatycznie, gdy włączona jest powyższa opcja).
+
+Osobny przycisk **Backup kopii roboczej** w prawym panelu zapisuje aktualną kopię roboczą (z edycjami i usunięciami) w `<data_dir>/backups/working-copy/`. Jest wyszarzony, gdy nie ma zmian. „Wyczyść historię" w Ustawieniach usuwa **tylko automatyczną historię** — ręczne kopie zostają.
 
 **SQL:** osobne okno z importem dumpu (`.sql` / `.sql.gz`, strumieniowo, z paskiem postępu: przesyłanie → rozpakowanie → wykonywanie poleceń) oraz eksportem `.sql` i `.sql.gz`. Po imporcie baza jest traktowana jak plik z komputera (`kind=upload`) — Upload wyłączony, dostępny eksport SQL/.db.
 
@@ -276,8 +284,8 @@ GET-y `/api/*` i `/img` wymagają ciasteczka sesji ustawianego przez `/` (HttpOn
 | `/api/priv` | GET / POST | POST | tryb + `platform` + `label` (`user`/`sudo`/`admin`/`root`); `enable` (hasło), `disable`; Windows: `enable` → 400 |
 | `/api/service` | GET / POST | POST | usługa; `start`, `stop` |
 | `/api/history` | GET / POST | POST | lista (`id` = szczegóły); POST `{action:"clear"}` |
-| `/api/backup` | POST | tak | kopia bazy w `<data_dir>/backups/` + wpis metadanych (`ver`) |
-| `/api/backups` | GET / POST | POST | lista ręcznych kopii; `id` = różnice względem bieżącej bazy; POST `{action:"delete", id}` |
+| `/api/backup` | POST | tak | kopia żywego oryginału w `<data_dir>/backups/` + wpis metadanych (`ver`, `source`) |
+| `/api/backups` | GET / POST | POST | lista ręcznych kopii; `id` = różnice względem bieżącej bazy; POST `{action:"delete", id}` lub `{action:"revert", id, backup, force_schema}` |
 | `/api/job` | GET | – | postęp operacji (np. reload: fazy i bajty) |
 | `/api/sqljob` | GET | – | postęp importu SQL (faza, bajty) |
 | `/api/import-sql` | POST | tak | surowy dump SQL / `.sql.gz` (`X-Filename`) |
@@ -316,9 +324,24 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 - historia: wpisy, rozwijanie, przycinanie po limicie, czyszczenie, brak pliku → blokada Restore,
 - instalator: odrzucenie root/home, utworzenie nowego folderu, trwałość po restarcie,
 - dyski: punkty montowania (Linux/Windows/macOS/Docker), fstab z `noauto`, `\040`, NFS, statusy i kolory; `lsblk` z mapą ścieżka→urządzenie: zamontowany, obecny-niezamontowany (`unmounted`), odłączony (`detached`), fallback fstab, brak `lsblk` → `unknown` na Windows,
+- **config portable 1.6.13:** nowy folder wersji → brak configu → setup; po zapisie `jf_browser.settings.json` obok programu i backup w nowym folderze (stary `backups/` bez zmian).
+- **wykrywanie bazy 1.6.19:** lista domyślnych ścieżek (Windows/Linux/Docker/folder programu), wybór `jellyfin.db` w setupie i zapis `db_path`; test: setup z wybraną bazą → wczytana, restart **bez `--db`** wczytuje ją z configu; `valid_db_file` odrzuca `.sql` i brak pliku.
+- **szybkie poprawki 1.6.18:** `None` w nazwie `.bak` = zajęte; `PRIV_LOCK` jako RLock (priv_disable pod lockiem, bez blokady); `install_file` tylko z zapisywalnym katalogiem (+ fallback); `reset_work` odporny na błąd i odtwarza połączenie; timeout 30 s przy `/api/load` i imporcie SQL (400 zamiast wiszenia); GET bez ujawniania wyjątków (ogólny komunikat + log); `/api/problems` zwraca `{items,total,limit}` i UI pokazuje „z N wpisów (limit)".
 - blokada usunięcia z `missing` bez `force`, z `force` przechodzi; pomarańczowy bez blokady,
 - UI: menu, okna, filtry, paski ładowania, przełączanie języków,
+- **refaktor 1.4.0:** interfejs w `ui/index.html`, tłumaczenia w `i18n.py`; sprawdzone: strona z tokenem i słownikiem, brak placeholderów, tłumaczenia API (de), eksport SQL, historia, dyski, brak błędów w konsoli.
 - **walidacja schematu:** porównanie tabel nowej bazy z oryginałem — ta sama struktura przechodzi bez ostrzeżeń, brakujące tabele (np. przy okrojonej kopii) dają `409 {schema:true}` i `force_schema` przechodzi.
+- **Host 1.5.2:** brak nagłówka → 403, domena (rebinding) → 403, `127.0.0.1`/`localhost`/IP LAN/`[::1]` → 200; POST z domeną → 403.
+- **1.6.0:** backup z historii (plik w `backups/`), postęp `%` przy reload, sortowanie po tytule, podpowiedź „sugerowane usunięcie", czytelne błędy importu SQL (`.db`/binarne), ukrywanie okien systemowych bez tkinter/DISPLAY, popup wyjaśniający brak kluczowych tabel, status dysków oparty na montowaniach (Linux) także przy braku dostępu do żadnego folderu.
+- **1.6.6:** ręczne kopie jako osobna sekcja historii z metadanymi i różnicami względem bieżącej bazy (`+` w kopii / `−` w bazie); test: po usunięciu wpisu różnica `+1`, po reloadzie `—`.
+- **1.6.9:** „Wyczyść historię" usuwa tylko automatyczną (test: 5 wpisów usuniętych, 2 ręczne kopie zostały); kosz przy każdej ręcznej kopii usuwa plik i wpis (test: potwierdzenie → ubyła 1 kopia, plik zniknął).
+- **Windows 1.6.24:** `/api/priv` → `platform:windows`, `mode:limited`, `sudo:false`; `POST enable` → 400 z komunikatem o braku sudo; przycisk ADMIN wyłączony, ukryty na ekranie braku bazy; okno ścieżki: otwarcie, Enter, Esc i Anuluj; `cancel` pola pliku czyści wartość i zdejmuje fokus; brak błędów konsoli (poza celowym 400 z testu złej ścieżki).
+- **1.6.25:** `/api/setup` → `platform:windows`, `db_default:C:\ProgramData\...`; okno „innej ścieżki" domyślnie pokazuje ścieżkę Windows (mimo bieżącego `src` w stylu linuksowym); ścieżka linuksowa na Windows → `400 e_path_style` (test API: EN/DE, komunikat PL sprawdzony w `tr`); wybór pliku w Chromium idzie przez `showOpenFilePicker` (test: wywołanie 1, anulowanie Esc, UI odpowiada natychmiast, fokus wraca na przycisk); ikona ⏭ ukrywa ekran braku bazy i nie wraca po `refreshStatus`; menu Ustawienia działa po pominięciu; brak błędów konsoli.
+- **1.6.26:** bez bazy `#status` ma klasę `bad` (czerwony) i tekst „Baza nie wczytana. Nie znaleziono pliku: …”; sekcja Dyski w Ustawieniach i Połączeniu pokazuje komunikat o braku bazy, przycisk odświeżania jest wyłączony; brak żądań `/api/disks` (konsola bez 409). Po wczytaniu bazy: status zielony, dyski wypełnione, „Sprawdź ponownie" wysyła `/api/disks?refresh=1`.
+- **1.6.27:** start z `--db /var/lib/...` na Windows → ścieżka pominięta, `/api/info` zwraca `platform:windows` i `src`/`nodb_reason` z `C:\ProgramData\...`; napis na ekranie braku bazy i czerwony status w Ustawieniach pokazują ścieżkę Windows; brak śladu ścieżki linuksowej w UI; brak błędów konsoli.
+- **1.6.28:** `/api/priv` → `label:"user"` na Windows bez podniesionych uprawnień; plakietka `USER` obok języka (szara), tooltip tłumaczony; symulacja `ADMIN`/`ROOT`/`SUDO` daje odpowiednie kolory i podpisy; zmiana języka aktualizuje tooltip; brak błędów konsoli.
+- **1.6.29:** backup przy Uploadzie z żywego pliku (kopia + `quick_check` na tymczasowym serwerze, 16 625 wpisów); brak tabel tymczasowych — biblioteki/filtry działają przez CTE/`IN`, testy typów/listy/problemów; cache `stat` (drugie sprawdzenie z pamięci, czyszczenie przy odświeżeniu); `limit` listy (5/50 wierszy) i „Pokaż więcej"; równoległy skan portów (20 portów × 0,2 s → 0,2 s); czyszczenie 35 sierot obrazów i powrót przez reload; usuwanie starych `jfdb_*` (24 h); skrypt SQL Docker/systemd; POST eksportu `.db`/`.sql.gz` (200, poprawne nazwy plików); docstring platform.
+- **1.6.30:** prawdziwa paginacja `limit`/`offset` bez sufitu 20 000; test na kopii z **46 625** wpisami — `offset=20000` i `offset=30000` zwracają dalsze pozycje „Over20k"; UI dokłada 5 → 10 wierszy; sortowanie problemów nadal skanuje wszystkie pasujące pozycje (może być wolniejsze na ogromnych bibliotekach).
 
 **Niesprawdzone:** prawdziwe `sudo`/`systemctl`/Docker w tej sesji, systemd automount, macOS, AppImage/EXE, wydajność na bardzo dużych bazach (>1 GB), miniatury z prawdziwych folderów w trybie ADMIN, realny skan portów na Linuksie (logika równoległa sprawdzona na makiecie).
 
@@ -336,7 +359,7 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 ## 18. Plan dalszy
 
 1. **AppImage / EXE:** PyInstaller + `appimagetool` (katalog `ui/` przez `--add-data`), tryb portable (`settings.json` obok programu), tkinter w paczce, **funkcje per platforma**:
-   - **Windows:** bez sudo/ADMIN (zrobione), `os.startfile`/`webbrowser` zamiast `xdg-open`, usługa Jellyfina przez `sc.exe`/`net stop`, wybór pliku w tkinterze **w procesie lub wątku** (w zamrożonym EXE `sys.executable -c` nie uruchomi Pythona), ścieżki `%ProgramData%`/`%LOCALAPPDATA%`, ukryta konsola i ikona;
+   - **Windows:** bez sudo/ADMIN (zrobione w 1.6.24), `os.startfile`/`webbrowser` zamiast `xdg-open`, usługa Jellyfina przez `sc.exe`/`net stop`, wybór pliku w tkinterze **w procesie lub wątku** (w zamrożonym EXE `sys.executable -c` nie uruchomi Pythona), ścieżki `%ProgramData%`/`%LOCALAPPDATA%`, ukryta konsola i ikona;
    - **macOS (niezbadany):** `open` zamiast `xdg-open`, usługa przez `launchctl`, uprawnienia bez sudo (UI bez ADMIN);
    - **Linux/AppImage:** helper ADMIN bez systemowego `python3` (re-exec binarki), `libfuse2`, `systemctl`/Docker, `xdg-open`.
 2. **Weryfikacja `sqlite3` CLI przy pakowaniu (AppImage / inne systemy):** sprawdzić, czy `sqlite3` jest zainstalowany; jeśli nie, przy pierwszym starcie pokazać okno kontrolne (folder `tmp/history`, `sqlite3`) z:
@@ -346,8 +369,7 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
    Import SQL działa też bez CLI (parser wbudowany), ale CLI jest szybszy dla dużych dumpów.
 3. **Instalator AppImage/EXE (później):** zachować tryb portable; instalator wykrywa ścieżkę, nadpisuje pliki programu, importuje setup ze starej wersji (`data_dir`, `jf_port`, `jf_service`, `history_max`, `disk_map`) i uwzględnia zmiany.
 4. Testy automatyczne w repo (`tests/`).
-5. Usuwanie pojedynczych wpisów historii, zmiana folderu danych z Ustawień.
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Pełna lista w `Wersje.md`. Kolejna funkcja to `0.8.0`, a następna poprawka do tej linii to `0.7.7`.
+Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Publiczna linia main używa **0.x.x**. Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Kolejna funkcja to `0.10.0`, a następna poprawka do tej linii to `0.9.1`.

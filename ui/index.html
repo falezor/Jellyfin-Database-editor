@@ -51,12 +51,16 @@ body.leftcollapsed #splitcol{opacity:.85}
 #bar{display:flex;gap:6px 12px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--b);flex-wrap:wrap}
 #leftgrp{display:flex;gap:5px;align-items:center;flex:1 1 auto;min-width:0;flex-wrap:wrap}
 #bar button{height:30px;padding:0 8px;font-size:13px}
+#backupwork{color:#1565c0;border:1px solid #1565c0;background:rgba(21,101,192,.12);border-radius:4px}
+#backupwork:disabled{opacity:.45;cursor:default}
 #bar #title{flex:1 1 90px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #modebtn{font-weight:700;letter-spacing:.6px;border-radius:15px;padding:0 12px;border:2px solid #1565c0;background:transparent;color:#1565c0;cursor:pointer}
 #modebtn.admin{background:#c62828;border-color:#c62828;color:#fff}#modebtn:disabled{cursor:default}
 #svcstat{font-size:13px;white-space:nowrap}#svcstat.run{color:#2e7d32}#svcstat.bad{color:#e53935}#svcstat.off{opacity:.75}
 #jfstat{font-size:12px}#jfstat.run{color:#2e7d32}#jfstat.bad{color:#e53935}#jfstat.off{opacity:.8}
 .col{display:flex;flex-direction:column;gap:6px}
+.svcauto{display:flex;align-items:flex-start;gap:6px;font-size:12px;cursor:pointer}
+.svcauto input{margin:2px 0 0;flex:none}
 .row2{display:flex;gap:6px}.row2 button{flex:1}
 .win{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.55);z-index:30;padding-top:6vh;overflow:auto}
 .winbox{background:Canvas;color:CanvasText;border:1px solid var(--b);border-radius:8px;padding:14px 16px 16px;width:min(520px,94vw);display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
@@ -69,7 +73,15 @@ body.leftcollapsed #splitcol{opacity:.85}
 #atext{max-height:55vh;overflow:auto;overflow-wrap:anywhere}
 .mbtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}#pwmsg{font-size:13px;min-height:1.2em}
 button.primary{background:#1565c0;color:#fff;border:0;border-radius:4px;cursor:pointer}
-#pwmodal,#amodal,#nodb,#inputmodal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:35;background:rgba(0,0,0,.55)}
+#pwmodal,#amodal,#nodb,#inputmodal,#editmodal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:35;background:rgba(0,0,0,.55)}
+.editbox{width:min(560px,94vw);max-height:88vh;overflow:auto}
+.efield{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.efield label{font-size:12px;opacity:.75}
+.efield input{font:inherit;padding:4px 6px;border:1px solid var(--b);border-radius:4px;background:Canvas;color:CanvasText}
+.efield .ro{font-size:13px;opacity:.6;word-break:break-all;white-space:pre-line}
+.efield textarea{font:12px/1.4 ui-monospace,monospace;padding:6px;border:1px solid var(--b);border-radius:4px;background:Canvas;color:CanvasText;min-height:120px;resize:vertical}
+.advtoggle{display:flex;align-items:center;gap:6px;font-size:13px;margin:4px 0}
+#eadvfields{border-top:1px solid var(--b);padding-top:8px}
 #nodb{background:Canvas;z-index:25}
 #nodb .mbox{position:relative}
 #nodbskip{position:absolute;top:6px;right:6px;padding:2px 7px;border:0;background:transparent;font-size:18px;line-height:1;cursor:pointer;opacity:.55;border-radius:4px}
@@ -213,6 +225,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <div id="leftgrp">
       <b id="title" data-i18n="choose_item">Wybierz pozycję z listy</b>
       <span id="hint" class="hintmsg"></span>
+      <button id="backupwork" disabled data-i18n="backup_work_btn" data-i18n-title="backup_work_tip">Backup kopii roboczej</button>
       <button id="selMiss" data-i18n="sel_miss">Zaznacz problemy</button>
       <label class="chk"><input type="checkbox" id="allDisks"> <span data-i18n="sel_inc_all">wszystkie dyski</span></label>
       <button id="selAll" data-i18n="sel_all">Zaznacz wszystko</button>
@@ -230,6 +243,8 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
   <div class="winhead"><h3 data-i18n="menu_settings">Ustawienia</h3><button class="x" data-win="win_settings" data-i18n-title="close" title="Zamknij">✕</button></div>
   <div class="dbsub" id="dbsum"></div>
   <div class="dbsub" id="datadir" style="color:inherit;opacity:.6"></div>
+  <button id="datadirpick" data-i18n="data_dir_change">Zmień folder danych…</button>
+  <div id="datadirmsg" class="dstat"></div>
   <div class="col">
     <div id="status"></div>
     <div id="jobwrap"><div id="jobbar"></div></div>
@@ -302,6 +317,8 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <div class="col"><b data-i18n="disk_section">Dyski</b><div id="disks_conn"></div></div>
     <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
     <div class="row2"><button id="svcstop" disabled data-i18n="svc_stop">⏹ Wyłącz</button><button id="svcstart" disabled data-i18n="svc_start">▶ Włącz</button></div>
+    <label class="svcauto"><input type="checkbox" id="svcauto"> <span data-i18n="svc_auto_label">Automatycznie zatrzymuj i uruchamiaj Jellyfin</span></label>
+    <span class="dstat" style="font-size:11px" data-i18n="svc_auto_note">Bez potwierdzeń przy Uploadzie, przywracaniu i backupie oryginału.</span>
     <div class="row2"><button id="modebtn">🔒 LIMITED</button></div>
     <span id="privhint" style="display:none"></span>
   </div>
@@ -336,6 +353,13 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
   <h3 id="atitle"></h3>
   <p id="atext"></p>
   <div class="mbtns" id="abtns"></div>
+</div></div>
+<div id="editmodal"><div class="mbox editbox">
+  <h3 id="etitle"></h3>
+  <div id="efields"></div>
+  <label class="advtoggle"><input type="checkbox" id="eadvanced"> <span data-i18n="edit_advanced">Zaawansowane</span></label>
+  <div id="eadvfields" style="display:none"></div>
+  <div class="mbtns"><button id="ecancel" data-i18n="cancel">Anuluj</button><button id="esave" class="primary" data-i18n="port_save">Zapisz</button></div>
 </div></div>
 <div id="nodb"><div class="nodb-wrap"><div class="mbox">
   <button id="nodbskip" data-i18n-title="nodb_skip_tip" title="Pomiń ten ekran">⏭</button>
@@ -372,8 +396,8 @@ let LANG=localStorage.getItem('jfb_lang');
 if(!LANG||!LANGS.includes(LANG)){const nv=(navigator.language||'pl').slice(0,2).toLowerCase();LANG=LANGS.includes(nv)?nv:'pl'}
 const t=(k,kv)=>{const e=I18N[k]||{};let s=e[LANG]||e.pl||k;if(kv)for(const p in kv)s=s.split('{'+p+'}').join(kv[p]);return s};
 const $=s=>document.querySelector(s);
-let sel=new Set(), rows=[], src='', view=null, lastInfo=null, nodbSkipped=false, listLimit=2000, listOffset=0, orphTotal=0, orphData=null;
-let jfLast=null, svcInfo=null, priv={mode:'limited'};
+let sel=new Set(), rows=[], src='', view=null, lastInfo=null, nodbSkipped=false, listLimit=2000, listOffset=0, orphTotal=0, orphData=null, listClickTimer=null, editId=null;
+let jfLast=null, svcInfo=null, priv={mode:'limited'}, svcAutoBusy=false;
 let disksData=[], mountsData=[], diskSel=null;
 let busyN=0;
 function busyStart(){busyN++;const b=$('#busy');if(b)b.classList.add('on')}
@@ -452,7 +476,7 @@ document.addEventListener('click',()=>$('#langmenu').classList.remove('open'));
 function openWin(id){$(id).style.display='flex'}
 function closeWin(id){$(id).style.display='none'}
 function anyWinOpen(){
-  for(const id of ['#inputmodal','#pwmodal','#amodal','#modal','#win_settings','#win_conn']) if($(id).style.display==='flex') return id;
+  for(const id of ['#inputmodal','#pwmodal','#amodal','#editmodal','#modal','#win_settings','#win_conn']) if($(id).style.display==='flex') return id;
   return null;
 }
 $('#m_settings').onclick=()=>{openWin('#win_settings');loadSettingsForm();if(lastInfo&&!lastInfo.nodb)refreshDisks(true)};
@@ -542,6 +566,7 @@ document.addEventListener('keydown',e=>{
   if(top==='#inputmodal')closeInput(null);
   else if(top==='#pwmodal')closePw(false);
   else if(top==='#amodal')closeAsk('cancel');
+  else if(top==='#editmodal')closeEdit();
   else if(top==='#modal')closePortModal();
   else if(top)closeWin(top);
 });
@@ -583,7 +608,21 @@ async function loadList(keep, more){
     if(r.suggest) tx.append(el('div','sugg',t('suggest_delete')));
     it.append(im,tx);
     if(view&&view.kind==='tree'&&view.item.Id===r.Id) it.classList.add('on');
-    it.onclick=()=>{document.querySelectorAll('.item.on').forEach(x=>x.classList.remove('on'));it.classList.add('on');openTree(r)};
+    it.onclick=()=>{
+      if(listClickTimer)clearTimeout(listClickTimer);
+      listClickTimer=setTimeout(()=>{
+        listClickTimer=null;
+        document.querySelectorAll('.item.on').forEach(x=>x.classList.remove('on'));
+        it.classList.add('on'); openTree(r);
+      },180);
+    };
+    it.ondblclick=ev=>{
+      ev.preventDefault();
+      if(listClickTimer){clearTimeout(listClickTimer);listClickTimer=null;}
+      document.querySelectorAll('.item.on').forEach(x=>x.classList.remove('on'));
+      it.classList.add('on');
+      openEdit(r);
+    };
     box.append(it);
   });
   listOffset+=d.length;
@@ -595,6 +634,98 @@ async function openTree(r){
   view={kind:'tree',item:r}; $('#title').textContent=r.Name; sel.clear(); updCnt(); closeWin('#win_sql');
   rows=await j('/api/tree?id='+encodeURIComponent(r.Id)); renderTree();
 }
+async function openEdit(r){
+  editId=r.Id;
+  const box=$('#efields'); box.innerHTML='';
+  const adv=$('#eadvfields'); adv.innerHTML='';
+  $('#eadvanced').checked=false; adv.style.display='none';
+  let item;
+  try{ item=await j('/api/item?id='+encodeURIComponent(editId)); }
+  catch(e){ alert(t('e_item_missing')); return; }
+  const fields=[
+    ['Name','name',item.Name,'text'],
+    ['SortName','sortname',item.SortName,'text'],
+    ['ProductionYear','productionyear',item.ProductionYear,'number'],
+    ['IndexNumber','indexnumber',item.IndexNumber,'number'],
+    ['ParentIndexNumber','parentindexnumber',item.ParentIndexNumber,'number'],
+    ['SeriesName','seriesname',item.SeriesName,'text'],
+  ];
+  for(const [label,key,value,type] of fields){
+    const w=el('div','efield');
+    w.append(el('label',null,label));
+    const inp=el('input'); inp.type=type; inp.dataset.field=key;
+    inp.value=(value==null)?'':String(value);
+    if(type==='number') inp.min='0';
+    w.append(inp); box.append(w);
+  }
+  const ro=el('div','efield');
+  ro.append(el('label',null,t('edit_readonly')));
+  const info=el('div','ro');
+  info.textContent=['Id','Type'].map(k=>k+': '+(item[k]==null||item[k]===''?'—':item[k])).join('\n');
+  ro.append(info); box.append(ro);
+  const addAdv=(label,key,value,kind='text')=>{
+    const w=el('div','efield'); w.append(el('label',null,label));
+    const inp=kind==='textarea'?el('textarea'):el('input');
+    if(kind!=='textarea') inp.type=kind;
+    inp.dataset.field=key;
+    inp.value=(value==null)?'':String(value);
+    w.append(inp); adv.append(w);
+  };
+  adv.append(el('div','dstat warn',t('edit_advanced_warn')));
+  if('Path' in item) addAdv('Path','path',item.Path);
+  if('Data' in item){
+    let data=item.Data||'';
+    try{ data=JSON.stringify(JSON.parse(data),null,2); }catch(e){}
+    addAdv('Data JSON','data',data,'textarea');
+  }
+  for(const k of ['ParentId','TopParentId','SeriesId','SeasonId','PrimaryVersionId'])
+    if(k in item) addAdv(k,k.toLowerCase(),item[k]);
+  if('ForcedSortName' in item) addAdv('ForcedSortName','forcedsortname',item.ForcedSortName);
+  if('OriginalTitle' in item) addAdv('OriginalTitle','originaltitle',item.OriginalTitle);
+  $('#etitle').textContent=t('edit_title')+': '+(item.Name||'');
+  $('#editmodal').style.display='flex';
+  const first=box.querySelector('input'); if(first)first.focus();
+}
+$('#eadvanced').onchange=()=>{
+  $('#eadvfields').style.display=$('#eadvanced').checked?'':'none';
+};
+function closeEdit(){$('#editmodal').style.display='none';editId=null}
+$('#ecancel').onclick=closeEdit;
+$('#esave').onclick=async()=>{
+  if(!editId)return;
+  const fields={};
+  document.querySelectorAll('#efields input[data-field]').forEach(inp=>{
+    const key=inp.dataset.field, v=inp.value.trim();
+    fields[key]=(key==='productionyear'||key==='indexnumber'||key==='parentindexnumber')
+      ?(v===''?null:Number(v)):v;
+  });
+  const advanced=$('#eadvanced').checked;
+  if(advanced){
+    document.querySelectorAll('#eadvfields [data-field]').forEach(inp=>{
+      fields[inp.dataset.field]=inp.value;
+    });
+    if(fields.data&&fields.data.trim()){
+      try{JSON.parse(fields.data)}
+      catch(e){alert(t('e_edit_json',{err:e.message}));return}
+    }
+  }
+  const id=editId;
+  $('#esave').classList.add('working');
+  const {ok,t:r}=await post('/api/edit',{id,fields,advanced});
+  $('#esave').classList.remove('working');
+  if(!ok){alert(r.error||'error');return}
+  closeEdit();
+  await refreshStatus();
+  if(view&&view.kind==='tree'&&view.item.Id===id){
+    view.item.Name=fields.name;
+    $('#title').textContent=fields.name;
+  }
+  await loadList(true);
+  if(view&&view.kind==='tree'){
+    rows=await j('/api/tree?id='+encodeURIComponent(view.item.Id));
+    renderTree();
+  }
+};
 async function openProblems(){
   view={kind:'problems'}; document.querySelectorAll('.item.on').forEach(x=>x.classList.remove('on'));
   $('#title').textContent=t('find_problems'); sel.clear(); updCnt(); closeWin('#win_sql');
@@ -623,11 +754,26 @@ function renderTree(){
     if(r.unk) pa.title=t('path_unk_tip');
     const g=el('td','guid',r.Id);
     g.title=t('guid_tip'); g.onclick=()=>navigator.clipboard.writeText(r.Id);
+    tr.title=t('edit_dblclick_hint');
+    tr.ondblclick=ev=>{
+      if(ev.target===cb||ev.target.tagName==='IMG'||ev.target.classList.contains('guid'))return;
+      ev.preventDefault(); openEdit(r);
+    };
     tr.append(c0,c1,nm,el('td',null,r.short),el('td',null,se),pr,pa,g); tb.append(tr);
   });
   $('#tree').innerHTML=''; $('#tree').append(tb);
 }
 function updCnt(){$('#cnt').textContent=sel.size;if($('#gencnt'))$('#gencnt').textContent=sel.size;$('#del').disabled=sel.size===0}
+$('#backupwork').onclick=async()=>{
+  if(!lastInfo||!lastInfo.dirty)return;
+  $('#backupwork').classList.add('working');
+  const {ok,t:r}=await post('/api/backup',{working:true,ver:(jfLast&&jfLast.info&&jfLast.info.Version)||''});
+  $('#backupwork').classList.remove('working');
+  if(!ok){alert(t('backup_work_failed',{err:r.error||'error'}));return}
+  const h=$('#hint'); const msg=t('backup_work_done',{path:r.path});
+  h.textContent=msg; h.classList.add('show');
+  setTimeout(()=>{if(h.textContent===msg)h.classList.remove('show')},7000);
+};
 $('#selMiss').onclick=()=>{
   const all=$('#allDisks').checked;
   rows.forEach(r=>{if(!isBad(r))return;if(!all&&r.dcolor==='red')return;sel.add(r.Id)});
@@ -645,6 +791,7 @@ const post=async(u,body)=>{let r,t={};
   return {ok:r.ok,t}};
 async function refreshStatus(){
   const i=await j('/api/info'); lastInfo=i;
+  if($('#svcauto')&&!svcAutoBusy) $('#svcauto').checked=!!i.service_auto;
   if(i.loading){ $('#nodb').style.display='none'; $('#status').textContent=t('loading_db'); $('#meta').textContent=t('loading_db'); return i; }
   applyDialog(i.dialog!==false);
   showNoDb(i); const up=i.kind==='upload';
@@ -660,6 +807,7 @@ async function refreshStatus(){
   }
   $('#upload').disabled=!i.dirty||up;
   $('#upload').title=up?t('upload_disabled_tip'):'';
+  $('#backupwork').disabled=!i.dirty;
   $('#dbsum').textContent=i.dirty?t('db_summary_dirty',{n:i.dirty}):'';
   return i;
 }
@@ -685,16 +833,7 @@ $('#del').onclick=async()=>{
 };
 $('#upload').onclick=async()=>{
   const i=await j('/api/info'); if(!i.dirty)return; const bk=$('#bk').checked;
-  await refreshJf(true); await refreshPriv(); await refreshSvc();
-  if(jfLast&&jfLast.state==='running'){
-    const can=svcInfo&&svcInfo.kind;
-    const r=await askModal({title:t('jf_on_title'),
-      text:t('jf_on_text',{ver:jfLast.info.Version,port:jfLast.port})+'\n\n'+(can?t('jf_on_can'):t('jf_on_cannot')),
-      buttons:can?[{label:t('cancel'),value:'cancel'},{label:t('stop_and_continue'),value:'stop',primary:true}]
-                :[{label:t('port_save')==='Zapisz'?'OK':'OK',value:'cancel'}]});
-    if(r!=='stop')return;
-    if(!(await doService('stop')))return;
-  }
+  const stop=await stopJfForWrite(); if(!stop.ok)return;
   if(priv.can_write_db===false&&priv.mode==='limited'){
     if(!(await ensureAdmin(t('e_write_src',{src:i.src}))))return;
   }
@@ -711,17 +850,13 @@ $('#upload').onclick=async()=>{
   }
   $('#upload').classList.remove('working');
   const ok=res.ok, r=res.t;
-  if(!ok){alert(t('upload_failed',{err:r.error||'error'}));await refreshStatus();return}
+  if(!ok){alert(t('upload_failed',{err:r.error||'error'}));await refreshStatus();await resumeJfAfterFailure(stop);return}
   sel.clear();updCnt();rows=[];view=null;$('#tree').innerHTML='';$('#title').textContent=t('choose_item');
   await refreshStatus();await loadTypes();await loadList();
   const msg=t('upload_done',{n:r.sent,backup:r.backup?t('backup_yes',{path:r.backup}):t('backup_none'),
     rebased:r.rebased?t('rebased_note'):''});
-  await refreshSvc();
-  if(svcInfo&&svcInfo.kind){
-    const r2=await askModal({title:t('done_title'),text:t('start_now_q',{msg}),
-      buttons:[{label:t('not_now'),value:'cancel'},{label:t('start_jf'),value:'start',primary:true}]});
-    if(r2==='start') await doService('start');
-  }else alert(t('start_manual',{msg}));
+  await startJfAfter(msg,stop.stopped);
+  if(!stop.stopped)showHint(msg,8000);
   refreshDisks();
 };
 function shq(s){return "'"+String(s||'').replace(/'/g,"'\\''")+"'"}
@@ -778,6 +913,35 @@ async function saveSettings(){
   }
 }
 $('#hmaxsave').onclick=saveSettings;
+
+$('#datadirpick').onclick=async()=>{
+  const {ok,t:r}=await post('/api/pickdir',{});
+  if(!ok){alert(t('data_dir_failed',{err:r.error||'error'}));return}
+  const s=await j('/api/setup');
+  const i=await j('/api/info');
+  const old=s.data_dir||'';
+  const dirty=i.dirty||0;
+  const choice=await askModal({title:t('data_dir_change'),
+    text:t('data_dir_confirm',{old,new:r.path,n:dirty}),
+    buttons:[{label:t('cancel'),value:'cancel'},{label:t('data_dir_change'),value:'go',primary:true}]});
+  if(choice!=='go')return;
+  const mm=$('#datadirmsg'); mm.className=''; mm.textContent=t('loading');
+  $('#datadirpick').classList.add('working');
+  startJobPoll();
+  const res=await post('/api/settings',{data_dir:r.path,force:true});
+  stopJobPoll(); jobProg(false);
+  $('#datadirpick').classList.remove('working');
+  if(!res.ok){mm.className='miss';mm.textContent=t('data_dir_failed',{err:res.t.error||'error'});return}
+  let msg=t('data_dir_done',{path:res.t.data_dir,history:res.t.moved.history,backups:res.t.moved.backups});
+  if(res.t.persisted===false) msg+=' '+t('data_dir_not_saved');
+  if(res.t.reload_error) msg+=' '+t('data_dir_reload_failed',{err:res.t.reload_error});
+  mm.className=(res.t.persisted===false||res.t.reload_error)?'warn':'ok'; mm.textContent=msg;
+  $('#datadir').textContent=t('data_dir_label')+': '+res.t.data_dir;
+  rows=[];view=null;sel.clear();updCnt();$('#tree').innerHTML='';$('#title').textContent=t('choose_item');
+  await refreshStatus();
+  if(lastInfo&&!lastInfo.nodb){await loadTypes();await loadList(true)}
+  refreshDisks();
+};
 
 function renderOrphans(r){
   orphData=r||null;
@@ -857,6 +1021,7 @@ function renderHistory(d){
       chg.append(el('span','hminus','−'+r.removed+' '));
       chg.append(el('span','hplus','+'+r.added));
       head.append(chg);
+      if(r.edited) head.append(el('span','hchg',t('history_edited',{n:r.edited})));
     }
     const rb=el('button','hrev',t('revert'));
     rb.disabled=r.exists===false;
@@ -884,6 +1049,11 @@ function renderBackups(d){
     head.append(el('span','hver',r.ver?('Jellyfin '+r.ver):t('history_unknown_ver')));
     head.append(el('span','hdate',r.ts||''));
     head.append(el('span','dstat',t('backup_size',{mb:Math.round((r.size||0)/1048576*10)/10})));
+    if(r.source) head.append(el('span','dstat',t(r.source==='working'?'backup_source_working':'backup_source_original')));
+    const revBtn=el('button','hrev',t('revert'));
+    revBtn.disabled=r.exists===false;
+    revBtn.title=r.exists===false?t('e_backup_file_missing'):t('revert');
+    revBtn.onclick=async ev=>{ev.stopPropagation(); await revertBackup(r)};
     const delBtn=el('button','hrev del','🗑');
     delBtn.title=t('backup_delete_tip');
     delBtn.onclick=async ev=>{
@@ -895,7 +1065,7 @@ function renderBackups(d){
       m.className='ok';m.textContent=t('backup_deleted',{path:rr.path||r.file||''});
       try{renderBackups(await j('/api/backups'))}catch(e){}
     };
-    head.append(delBtn, el('span','hchev','▸'));
+    head.append(revBtn, delBtn, el('span','hchev','▸'));
     const body=el('div','hbody');
     rec.append(head,body);
     head.onclick=async()=>{
@@ -924,13 +1094,19 @@ function renderBackups(d){
   });
 }
 $('#histbackup').onclick=async()=>{
+  const stop=await stopJfForWrite(); if(!stop.ok)return;
   startJobPoll(); jobProg(true,0,t('job_backup',{p:0}));
   const {ok,t:r}=await post('/api/backup',{ver:(jfLast&&jfLast.info&&jfLast.info.Version)||''});
   stopJobPoll(); jobProg(false);
   const m=$('#hmsg'); m.className=ok?'ok':'miss';
-  if(!ok){ m.textContent=t('backup_failed',{err:r.error||'error'}); return; }
+  if(!ok){
+    m.textContent=t('backup_failed',{err:r.error||'error'});
+    await resumeJfAfterFailure(stop);
+    return;
+  }
   m.textContent=t('backup_done',{path:r.path});
   try{ renderBackups(await j('/api/backups')); }catch(e){}
+  await startJfAfter(t('backup_done',{path:r.path}),stop.stopped);
 };
 const fmtItem=it=>{
   let s=it.Type?it.Type:''; if(it.Name) s+=(s?' · ':'')+it.Name;
@@ -942,7 +1118,7 @@ async function loadHistoryDetail(id,body){
   try{
     const r=await j('/api/history?id='+encodeURIComponent(id));
     body.innerHTML='';
-    const rem=r.items_removed||[], add=r.items_added||[];
+    const rem=r.items_removed||[], add=r.items_added||[], ed=r.items_edited||[];
     if(rem.length){
       body.append(el('div','hsub',t('history_removed')+' ('+r.removed+')'));
       rem.forEach(it=>body.append(el('div','hline m','− '+fmtItem(it))));
@@ -951,51 +1127,48 @@ async function loadHistoryDetail(id,body){
       body.append(el('div','hsub',t('history_added')+' ('+r.added+')'));
       add.forEach(it=>body.append(el('div','hline p','+ '+fmtItem(it))));
     }
-    if(!rem.length&&!add.length) body.append(el('div','hsub','—'));
+    if(ed.length){
+      body.append(el('div','hsub',t('history_edited',{n:r.edited})));
+      ed.forEach(it=>body.append(el('div','hline','~ '+fmtItem(it))));
+    }
+    if(!rem.length&&!add.length&&!ed.length) body.append(el('div','hsub','—'));
   }catch(e){ body.textContent=t('history_err',{err:e.message||e}); }
 }
 
-async function revertHistory(rec){
-  await refreshJf(true); await refreshPriv(); await refreshSvc();
-  if(jfLast&&jfLast.state==='running'){
-    const can=svcInfo&&svcInfo.kind;
-    const r=await askModal({title:t('jf_on_title'),
-      text:t('jf_on_text',{ver:jfLast.info.Version,port:jfLast.port})+'\n\n'+(can?t('jf_on_can'):t('jf_on_cannot')),
-      buttons:can?[{label:t('cancel'),value:'cancel'},{label:t('stop_and_continue'),value:'stop',primary:true}]
-                :[{label:'OK',value:'cancel'}]});
-    if(r!=='stop')return;
-    if(!(await doService('stop')))return;
-  }
+async function revertSource(rec, isBackup){
+  const stop=await stopJfForWrite(); if(!stop.ok)return;
   if(priv.can_write_db===false&&priv.mode==='limited'){
     if(!(await ensureAdmin(t('e_write_src',{src:lastInfo?lastInfo.src:''}))))return;
   }
   const i=await j('/api/info');
   if(i.dirty&&!confirm(t('discard_confirm',{n:i.dirty})))return;
   if(!confirm(t('revert_confirm',{ts:rec.ts})))return;
+  const api=isBackup?'/api/backups':'/api/revert';
+  const payload=isBackup
+    ?{action:'revert',id:rec.id,backup:$('#bk').checked,force_schema:false}
+    :{id:rec.id,backup:$('#bk').checked,force_schema:false};
   busyStart();
-  let res=await postAdmin('/api/revert',{id:rec.id,backup:$('#bk').checked,force_schema:false},t('e_write_admin'));
+  let res=await postAdmin(api,payload,t('e_write_admin'));
   if(!res.ok&&res.t&&res.t.schema){
     const mm=(res.t.schema_missing||[]).join(', ');
     const r3=await askModal({title:t('schema_title'),
       text:t('schema_text',{tables:mm})+'\n\n'+t('schema_confirm'),
       buttons:[{label:t('cancel'),value:'cancel'},{label:t('schema_confirm'),value:'go',primary:true}]});
     if(r3==='go')
-      res=await postAdmin('/api/revert',{id:rec.id,backup:$('#bk').checked,force_schema:true},t('e_write_admin'));
+      res=await postAdmin(api,Object.assign({},payload,{force_schema:true}),t('e_write_admin'));
   }
   busyEnd();
   const ok=res.ok, r=res.t;
-  if(!ok){alert(t('revert_failed',{err:r.error||'error'}));return}
+  if(!ok){alert(t('revert_failed',{err:r.error||'error'}));await resumeJfAfterFailure(stop);return}
   sel.clear();updCnt();rows=[];view=null;$('#tree').innerHTML='';$('#title').textContent=t('choose_item');
   await refreshStatus(); await loadTypes(); await loadList();
   if(getComputedStyle($('#win_history')).display==='flex') openHistory();
   const msg=t('revert_done',{ts:rec.ts})+(r.backup?'\n'+t('backup_yes',{path:r.backup}):'');
-  await refreshSvc();
-  if(svcInfo&&svcInfo.kind){
-    const r2=await askModal({title:t('done_title'),text:t('start_now_q',{msg}),
-      buttons:[{label:t('not_now'),value:'cancel'},{label:t('start_jf'),value:'start',primary:true}]});
-    if(r2==='start') await doService('start');
-  }else alert(msg);
+  await startJfAfter(msg,stop.stopped);
+  if(!stop.stopped)showHint(msg,8000);
 }
+async function revertHistory(rec){ return revertSource(rec,false); }
+async function revertBackup(rec){ return revertSource(rec,true); }
 $('#hclear').onclick=async()=>{
   if(!confirm(t('clear_confirm')))return;
   const {ok,t:r}=await post('/api/history',{action:'clear'});
@@ -1183,6 +1356,7 @@ function showJob(job){
   if(job.phase==='copy') jobProg(true,p,t('job_copy',{p:p==null?0:p}));
   else if(job.phase==='work') jobProg(true,p,t('job_work',{p:p==null?0:p}));
   else if(job.phase==='backup') jobProg(true,p,t('job_backup',{p:p==null?0:p}));
+  else if(job.phase==='move') jobProg(true,p,t('job_move',{p:p==null?0:p}));
 }
 function startJobPoll(){stopJobPoll();jobPoll=setInterval(async()=>{try{showJob(await j('/api/job'))}catch(e){}},300)}
 function stopJobPoll(){if(jobPoll){clearInterval(jobPoll);jobPoll=null}}
@@ -1396,8 +1570,65 @@ async function doService(action){
   if(action==='start') hideHint();
   return true;
 }
-$('#svcstop').onclick=async()=>{ if(confirm(t('stop_confirm'))) doService('stop') };
+$('#svcstop').onclick=async()=>{
+  if(serviceAutoOn()){ doService('stop'); return; }
+  if(confirm(t('stop_confirm'))) doService('stop');
+};
 $('#svcstart').onclick=()=>doService('start');
+$('#svcauto').onchange=async()=>{
+  const v=$('#svcauto').checked;
+  svcAutoBusy=true;
+  if(lastInfo)lastInfo.service_auto=v;
+  try{
+    const {ok,t:r}=await post('/api/settings',{service_auto:v});
+    if(!ok||!r||r.service_auto!==v){
+      $('#svcauto').checked=!v;
+      if(lastInfo)lastInfo.service_auto=!v;
+      alert(t('svc_auto_failed',{err:(r&&r.error)||'error'}));
+      return;
+    }
+    showHint(t('saved_ok'),4000);
+  }finally{ svcAutoBusy=false; }
+};
+function serviceAutoOn(){
+  const cb=$('#svcauto');
+  return cb?cb.checked:!!(lastInfo&&lastInfo.service_auto);
+}
+// Wspolny stop przed kazdym zapisem do oryginalu. service_auto pomija pytania.
+async function stopJfForWrite(){
+  const info=await refreshStatus();
+  if(info.kind==='upload') return {ok:true, stopped:false};
+  await refreshJf(true); await refreshPriv(); await refreshSvc();
+  if(!(jfLast&&jfLast.state==='running')) return {ok:true, stopped:false};
+  const can=svcInfo&&svcInfo.kind;
+  if(!serviceAutoOn()){
+    const r=await askModal({title:t('jf_on_title'),
+      text:t('jf_on_text',{ver:jfLast.info.Version,port:jfLast.port})+'\n\n'+(can?t('jf_on_can'):t('jf_on_cannot')),
+      buttons:can?[{label:t('cancel'),value:'cancel'},{label:t('stop_and_continue'),value:'stop',primary:true}]
+                :[{label:'OK',value:'cancel'}]});
+    if(r!=='stop')return {ok:false,stopped:false};
+  }
+  if(!can){ alert(t('jf_on_cannot')); return {ok:false,stopped:false}; }
+  return {ok:await doService('stop'), stopped:true};
+}
+async function startJfAfter(msg,stopped){
+  if(!stopped)return false;
+  await refreshSvc();
+  const can=svcInfo&&svcInfo.kind;
+  if(!can){ if(msg)alert(t('start_manual',{msg})); return false; }
+  if(serviceAutoOn()){
+    const ok=await doService('start');
+    if(ok&&msg)showHint(msg,8000);
+    return ok;
+  }
+  const r=await askModal({title:t('done_title'),text:t('start_now_q',{msg}),
+    buttons:[{label:t('not_now'),value:'cancel'},{label:t('start_jf'),value:'start',primary:true}]});
+  if(r==='start')return await doService('start');
+  return false;
+}
+async function resumeJfAfterFailure(stop){
+  if(stop&&stop.stopped&&serviceAutoOn()) await doService('start');
+}
 function showNoDb(i){
   const o=$('#nodb');
   if(!i.nodb){nodbSkipped=false;o.style.display='none';return}

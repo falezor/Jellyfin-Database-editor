@@ -1,7 +1,7 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 0.7.6 (2026-11-20)  
-This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md).
+**Version:** 0.9.0 (2026-11-20)  
+This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
 
 ---
 
@@ -136,6 +136,10 @@ Settings (`data_dir`, `db_path`, `jf_port`, `jf_service`, `history_max`, `disk_m
 
 A new program version in a different folder has no config, so it goes through setup again and creates its own data. This allows several versions to coexist.
 
+### Changing the data folder
+
+Settings → **Change data folder…** moves the program's `history/` and `backups/` to a new location and recreates `tmp/` there after reloading the database. The target must be writable, cannot be the disk root or the home directory, and cannot be inside the current data folder (or contain it). History and backups are moved with progress; the target `history/` and `backups/` must be empty. If a database is loaded from a path, it is reloaded from the original after the move and unsaved working-copy changes are discarded. A database loaded from a file (upload mode) must be exported or loaded from a path first. The Jellyfin database file and media files are not moved.
+
 Other leftover temporary files (`jfdb_*`, `jfup_*`, `jfexp_*`, `import_*`) are removed at startup if they are older than 24 hours.
 
 ---
@@ -174,7 +178,7 @@ Other leftover temporary files (`jfdb_*`, `jfup_*`, `jfexp_*`, `import_*`) are r
 Settings include:
 
 - database status and the number of pending changes,
-- data folder,
+- data folder and **Change data folder…**,
 - reload from original,
 - backup-before-Upload toggle,
 - loading a database from another path or file,
@@ -183,9 +187,13 @@ Settings include:
 - **Disks** section,
 - history limits and cleanup.
 
+### Editing items
+
+Double-click a list row or any record in the series/tree view to open the editor. Basic fields: `Name`, `SortName`, `ProductionYear`, `IndexNumber`, `ParentIndexNumber`, `SeriesName`. The **Advanced** checkbox exposes `Path`, `Data` JSON, `ParentId`, `TopParentId`, `SeriesId`, `SeasonId`, `PrimaryVersionId`, and `ForcedSortName`/`OriginalTitle` when those columns exist. `Data` must be a JSON object; hierarchy references must exist and `ParentId` cannot create a cycle. `Id` and `Type` stay read-only. Values are validated and saved in a transaction in the working copy; each changed item counts once, and the Upload history records edited items separately from deletions. Advanced changes can damage Jellyfin and may be overwritten by metadata refresh — make a backup. If the original database changes before Upload, the program refuses to rebase edits silently — reload and repeat them.
+
 ### Connection
 
-Shows Jellyfin status, port, disk list, service start/stop buttons and ADMIN mode. On Windows, systemd service control is unavailable.
+Shows Jellyfin status, port, disk list, service start/stop buttons, ADMIN mode and the **Stop and start Jellyfin automatically** option. The option skips the stop/start confirmations during Upload, restore, original backup and the manual **Stop** button; the stop itself is still performed. On Windows, systemd service control is unavailable.
 
 ### History
 
@@ -194,7 +202,7 @@ Two sections:
 - **automatic** — entries created by each Upload (date, version, `−N +M`, missing file, Restore),
 - **manual backups** — created with the **Backup** button, outside the history limit; they show differences against the current database.
 
-Each manual backup can be removed with a trash button. “Clear history” removes only automatic entries — manual backups are kept.
+Each manual backup has a **Restore** button that replaces the original database with that copy (with the same service, permission, schema and `quick_check` safeguards as Upload); it can also be removed with a trash button. "Clear history" removes only automatic entries - manual backups are kept.
 
 ### SQL
 
@@ -310,7 +318,9 @@ Upload is disabled for a database loaded “from the computer” (export-only mo
 
 ### Manual backups
 
-The **Backup** button in the History window creates a full copy in `<data_dir>/backups/`. Backups are outside the history limit and show differences against the current database (`+` in the backup / `−` in the database). They can be removed individually with the trash button.
+The **Backup** button in the History window creates a full copy of the **live original database** (including `-wal`/`-shm`) in `<data_dir>/backups/`. In upload mode, where there is no original path, it snapshots the working copy instead. Backups are outside the history limit and show differences against the current working copy (`+` in the backup / `-` in the database). Each entry has **Restore** (replace the original with this backup) and a trash button. Jellyfin **must be stopped** for an original backup — the program stops it first and offers to start it again afterwards (or restarts it automatically when the Connection option is enabled).
+
+The separate **Back up working copy** button in the right panel saves the current working copy (including edits and deletions) to `<data_dir>/backups/working-copy/`. It is disabled when there are no changes.
 
 Only one `.bak` is created per session (on the first Upload with backup enabled). Optional `bak_keep` keeps the N newest program-created `<database>-*.bak` files; default **10**, 0 = off, max 10. The current session `.bak` is protected. Manual backups in `backups/` are never touched by this cleanup.
 
@@ -422,20 +432,20 @@ The language can be changed in the top menu or on the “Database not loaded” 
 - SQL import without the `sqlite3` CLI uses the slower built-in parser.
 - In LIMITED mode, thumbnails from protected folders may not be displayed.
 - Problem sorting on very large libraries may be slower — it analyses all matching rows.
-- AppImage/EXE packaging is not ready yet; it is planned for a future 0.x release.
+- AppImage/EXE packaging is not ready yet; it is planned for `1.7.0`.
 - macOS and some service-control features have not been tested on a live system.
 
 ---
 
 ## 17. Development and versioning
 
-- Current version: **0.7.6**.
-- Version scheme: `X.Y.Z`; from 0.7.6 the public line uses 0.x.x. The next feature release is `0.8.0`; the next fix for this line is `0.7.7`.
+- Current version: **0.9.0**.
+- Version scheme: `X` - main line / major change, `Y` - new features, `Z` - bugfixes or very small changes. The public main line uses **0.x.x**. The next feature release is `0.10.0`; the next fix for this line is `0.9.1`.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
 - Build a release archive with `python scripts/build_release.py vX.Y.Z`.
 - This document is updated with every release.
-- Next steps: AppImage/EXE packaging, installer, automated tests in the repo, changing the data folder from Settings.
+- Next steps: AppImage/EXE packaging and an installer.
 
 ---
 

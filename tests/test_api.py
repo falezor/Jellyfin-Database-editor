@@ -86,6 +86,95 @@ def create_test_db(path, count=25):
         con.close()
 
 
+def create_advanced_db(path):
+    """Rich hierarchy used by the advanced-editor tests."""
+    con = sqlite3.connect(path)
+    try:
+        con.executescript("""
+        CREATE TABLE BaseItems (
+            Id TEXT PRIMARY KEY,
+            Name TEXT,
+            SortName TEXT,
+            Type TEXT,
+            Path TEXT,
+            ParentId TEXT,
+            TopParentId TEXT,
+            SeriesId TEXT,
+            SeasonId TEXT,
+            SeriesName TEXT,
+            IndexNumber INTEGER,
+            ParentIndexNumber INTEGER,
+            ProductionYear INTEGER,
+            Size INTEGER,
+            PrimaryVersionId TEXT,
+            Data TEXT,
+            ForcedSortName TEXT,
+            OriginalTitle TEXT
+        );
+        CREATE TABLE BaseItemImageInfos (
+            Id TEXT PRIMARY KEY,
+            ItemId TEXT,
+            ImageType INTEGER,
+            Path TEXT
+        );
+        """)
+
+        def row(iid, name, typ, path='', parent='', top='', series='', season='',
+                idx=None, pidx=None, year=None, data=None, forced=None,
+                original=None, version=None):
+            return (iid, name, name, typ, path, parent, top, series, season, '',
+                    idx, pidx, year, 0, version, data, forced, original)
+
+        tv_series = 'MediaBrowser.Controller.Entities.TV.Series'
+        tv_season = 'MediaBrowser.Controller.Entities.TV.Season'
+        tv_episode = 'MediaBrowser.Controller.Entities.TV.Episode'
+        movie = 'MediaBrowser.Controller.Entities.Movies.Movie'
+        rows = [
+            row('series-1', 'Series One', tv_series, '/media/tv/one'),
+            row('series-2', 'Series Two', tv_series, '/media/tv/two'),
+            row('season-1', 'Season 1', tv_season, parent='series-1', top='series-1',
+                series='series-1', idx=1, pidx=1),
+            row('season-2', 'Season 2', tv_season, parent='series-2', top='series-2',
+                series='series-2', idx=2, pidx=2),
+            row('ep-1', 'Episode One', tv_episode, '/media/tv/one/s01e01.mkv',
+                parent='season-1', top='series-1', series='series-1', season='season-1',
+                idx=1, pidx=1),
+            row('ep-2', 'Episode Two', tv_episode, '/media/tv/one/s01e02.mkv',
+                parent='season-1', top='series-1', series='series-1', season='season-1',
+                idx=2, pidx=1),
+            row('ep-3', 'Episode Three', tv_episode, '/media/tv/two/s02e01.mkv',
+                parent='season-2', top='series-2', series='series-2', season='season-2',
+                idx=1, pidx=2),
+            row('movie-1', 'Movie One', movie, '/media/movies/one.mkv', year=2001,
+                data='{"Overview":"Old overview","Tags":["a","b"]}',
+                forced='One, The', original='The One'),
+            row('movie-2', 'Movie Two', movie, '/media/movies/two.mkv'),
+            row('movie-3', 'Movie Three', movie, '/media/movies/three.mkv'),
+            row('movie-4', 'Movie Four', movie, '/media/movies/four.mkv'),
+            row('movie-5', 'Movie Five', movie, '/media/movies/five.mkv'),
+            row('basic-1', 'Basic One', movie, '/media/movies/basic.mkv'),
+            row('basic-2', 'Basic Two', movie, '/media/movies/basic2.mkv'),
+            row('flag-1', 'Flag One', movie, '/media/movies/flag.mkv'),
+            row('target-long', 'Target Long', movie, '/media/movies/target.mkv'),
+            row('cyc-a', 'Cycle A', movie, '/media/movies/cyc-a.mkv'),
+            row('cyc-b', 'Cycle B', movie, '/media/movies/cyc-b.mkv'),
+            row('cyc-c', 'Cycle C', movie, '/media/movies/cyc-c.mkv'),
+            row('movie-uni', 'Zażółć gęślą jaźń 🎬', movie,
+                'D:\\Media\\Filmy\\Остров.mkv',
+                data='{"Title":"Остров","Quote":"\\"x\\""}'),
+            row('movie-legacy', 'Legacy Data', movie, '/media/movies/legacy.mkv',
+                data='not json'),
+        ]
+        for i in range(111):
+            parent = f'chain-{i + 1:03d}' if i < 110 else 'target-long'
+            rows.append(row(f'chain-{i:03d}', f'Chain {i}', movie,
+                            f'/media/movies/chain-{i:03d}.mkv', parent=parent))
+        con.executemany('INSERT INTO BaseItems VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', rows)
+        con.commit()
+    finally:
+        con.close()
+
+
 class Server:
     def __init__(self, db_path):
         self.tmp = tempfile.mkdtemp(prefix='jfapi_')
@@ -254,6 +343,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.server.host_status(f'192.168.1.50:{self.server.port}'), 403)
         self.assertEqual(self.server.host_status(f'127.0.0.1:{self.server.port}'), 200)
 
+    def test_service_auto_setting(self):
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200)
+        self.assertFalse(info.get('service_auto'))
+
+        status, saved = self.server.post('/api/settings', {'service_auto': True})
+        self.assertEqual(status, 200)
+        self.assertTrue(saved['service_auto'])
+        self.assertTrue(saved['persisted'])
+        with open(self.server.config, encoding='utf-8') as f:
+            self.assertTrue(json.load(f)['service_auto'])
+
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200)
+        self.assertTrue(info['service_auto'])
+
+        status, saved = self.server.post('/api/settings', {'service_auto': False})
+        self.assertEqual(status, 200)
+        self.assertFalse(saved['service_auto'])
+
     def test_data_flow(self):
         status, rows = self.server.get('/api/list?limit=5&offset=20')
         self.assertEqual(status, 200)
@@ -263,6 +372,50 @@ class ApiTests(unittest.TestCase):
         status, only = self.server.get('/api/list?sort=only&limit=5&offset=0')
         self.assertEqual(status, 200)
         self.assertEqual(len(only), 5)
+
+        status, item = self.server.get('/api/item?id=item-010')
+        self.assertEqual(status, 200)
+        self.assertEqual(item['Name'], 'Item 010')
+        status, edited = self.server.post('/api/edit', {
+            'id': 'item-010',
+            'fields': {'name': 'Renamed 010', 'productionyear': 2021, 'seriesname': ''},
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(edited['dirty'], 1)
+        self.assertEqual(edited['edited'], 1)
+        status, item = self.server.get('/api/item?id=item-010')
+        self.assertEqual(status, 200)
+        self.assertEqual(item['Name'], 'Renamed 010')
+        self.assertEqual(item['ProductionYear'], 2021)
+        self.assertIsNone(item['SeriesName'])
+        status, _ = self.server.post('/api/edit', {'id': 'item-010', 'fields': {'name': ''}})
+        self.assertEqual(status, 400)
+        status, _ = self.server.post('/api/edit', {'id': 'missing', 'fields': {'name': 'x'}})
+        self.assertEqual(status, 400)
+        status, advanced = self.server.post('/api/edit', {
+            'id': 'item-010', 'advanced': True,
+            'fields': {
+                'path': '/media/renamed.mkv',
+                'data': '{"Overview": "Edited overview"}',
+                'parentid': 'item-000',
+            },
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(advanced['dirty'], 1)
+        status, item = self.server.get('/api/item?id=item-010')
+        self.assertEqual(status, 200)
+        self.assertEqual(item['Path'], '/media/renamed.mkv')
+        self.assertEqual(item['ParentId'], 'item-000')
+        self.assertEqual(json.loads(item['Data']), {'Overview': 'Edited overview'})
+        status, _ = self.server.post('/api/edit', {
+            'id': 'item-010', 'advanced': True, 'fields': {'data': '{bad'}})
+        self.assertEqual(status, 400)
+        status, _ = self.server.post('/api/edit', {
+            'id': 'item-010', 'advanced': True, 'fields': {'parentid': 'missing'}})
+        self.assertEqual(status, 400)
+        status, _ = self.server.post('/api/edit', {
+            'id': 'item-010', 'advanced': True, 'fields': {'parentid': 'item-010'}})
+        self.assertEqual(status, 400)
 
         status, problems = self.server.get('/api/problems')
         self.assertEqual(status, 200)
@@ -300,7 +453,7 @@ class ApiTests(unittest.TestCase):
 
         status, info = self.server.get('/api/info')
         self.assertEqual(status, 200)
-        self.assertEqual(info['dirty'], 4)
+        self.assertEqual(info['dirty'], 5)
 
         status, uploaded = self.server.post('/api/upload', {'backup': True})
         self.assertEqual(status, 200)
@@ -337,6 +490,10 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(all(r['ver'] == '10.10.7' for r in history['records']))
         self.assertTrue(os.path.isfile(os.path.join(self.server.data_dir, 'history',
                                                      anchors[0]['file'])))
+        edited_recs = [r for r in history['records'] if r.get('edited')]
+        self.assertEqual(len(edited_recs), 1)
+        self.assertEqual(edited_recs[0]['edited'], 1)
+        self.assertTrue(any(x['Id'] == 'item-010' for x in edited_recs[0]['items_edited']))
 
         def baks():
             return [n for n in os.listdir(os.path.dirname(self.db))
@@ -366,6 +523,395 @@ class ApiTests(unittest.TestCase):
         status, orphans = self.server.get('/api/orphans')
         self.assertEqual(status, 200)
         self.assertEqual(orphans['total'], 0)
+
+        status, _ = self.server.post('/api/delete', {'ids': ['item-003']})
+        self.assertEqual(status, 200)
+        status, backup = self.server.post('/api/backup', {})
+        self.assertEqual(status, 200)
+        self.assertEqual(backup['source'], 'original')
+        backup_path = os.path.join(self.server.data_dir, 'backups', backup['file'])
+        self.assertTrue(os.path.isfile(backup_path))
+        con = sqlite3.connect(backup_path)
+        try:
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM BaseItems').fetchone()[0], 23)
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM BaseItems WHERE Id='item-003'").fetchone()[0], 1)
+        finally:
+            con.close()
+
+        status, working_backup = self.server.post('/api/backup', {'working': True})
+        self.assertEqual(status, 200)
+        self.assertEqual(working_backup['source'], 'working')
+        working_path = os.path.join(
+            self.server.data_dir, 'backups', 'working-copy', working_backup['file'])
+        self.assertTrue(os.path.isfile(working_path))
+        con = sqlite3.connect(working_path)
+        try:
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM BaseItems').fetchone()[0], 22)
+        finally:
+            con.close()
+
+        status, _ = self.server.post('/api/delete', {'ids': ['item-002']})
+        self.assertEqual(status, 200)
+        status, reverted = self.server.post(
+            '/api/backups', {'action': 'revert', 'id': backup['id'], 'backup': False})
+        self.assertEqual(status, 200)
+        self.assertEqual(reverted['id'], backup['id'])
+        con = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(con.execute('SELECT COUNT(*) FROM BaseItems').fetchone()[0], 23)
+        finally:
+            con.close()
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200)
+        self.assertEqual(info['dirty'], 0)
+        status, backups = self.server.get('/api/backups')
+        self.assertEqual(status, 200)
+        self.assertEqual(len(backups['records']), 1)
+
+        old_data = self.server.data_dir
+        new_data = os.path.join(self.server.tmp, 'data2')
+        status, moved = self.server.post('/api/settings', {'data_dir': new_data, 'force': True})
+        self.assertEqual(status, 200)
+        self.assertEqual(moved['data_dir'], os.path.abspath(new_data))
+        self.assertTrue(moved['reloaded'])
+        self.assertGreaterEqual(moved['moved']['history'], 1)
+        self.assertGreaterEqual(moved['moved']['backups'], 1)
+        self.server.data_dir = new_data
+        self.assertFalse(os.path.exists(os.path.join(old_data, 'history')))
+        self.assertFalse(os.path.exists(os.path.join(old_data, 'backups')))
+        self.assertTrue(os.path.isfile(os.path.join(new_data, 'history', 'index.json')))
+        self.assertTrue(os.path.isfile(os.path.join(new_data, 'backups', backup['file'])))
+        self.assertTrue(os.path.isfile(os.path.join(
+            new_data, 'backups', 'working-copy', working_backup['file'])))
+
+        status, history = self.server.get('/api/history')
+        self.assertEqual(status, 200)
+        self.assertEqual(len(history['records']), 1)
+        self.assertTrue(os.path.isfile(os.path.join(
+            new_data, 'history', history['records'][0]['file'])))
+        status, backups = self.server.get('/api/backups')
+        self.assertEqual(status, 200)
+        self.assertEqual(len(backups['records']), 1)
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200)
+        self.assertFalse(info['nodb'])
+        self.assertEqual(info['dirty'], 0)
+
+
+class AdvancedEditTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix='jfadv_')
+        cls.db = os.path.join(cls.tmp, 'jellyfin.db')
+        create_advanced_db(cls.db)
+        cls.server = Server(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.close()
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def item(self, rid):
+        status, item = self.server.get('/api/item?id=' + rid)
+        self.assertEqual(status, 200, item)
+        return item
+
+    def dirty(self):
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200, info)
+        return info['dirty']
+
+    def edit(self, rid, fields, advanced=True):
+        return self.server.post('/api/edit', {
+            'id': rid, 'fields': fields, 'advanced': advanced})
+
+    def ok(self, rid, fields, advanced=True):
+        status, body = self.edit(rid, fields, advanced)
+        self.assertEqual(status, 200, body)
+        return body
+
+    def rejected(self, rid, fields, advanced=True):
+        before = self.item(rid)
+        status, body = self.edit(rid, fields, advanced)
+        self.assertEqual(status, 400, body)
+        self.assertEqual(self.item(rid), before)
+        return body
+
+    def original_row(self, rid):
+        con = sqlite3.connect(self.db)
+        try:
+            return con.execute(
+                'SELECT Name, Path, Data, ParentId FROM BaseItems WHERE Id=?',
+                (rid,)).fetchone()
+        finally:
+            con.close()
+
+    def test_01_round_trip_all_advanced_fields(self):
+        before = self.dirty()
+        data_text = (' { "Overview" : "Line 1\\nLine 2", "Tags" : ["a", "b"], '
+                     '"Nested" : {"n": 1, "ok": true} } ')
+        expected_data = {
+            'Overview': 'Line 1\nLine 2',
+            'Tags': ['a', 'b'],
+            'Nested': {'n': 1, 'ok': True},
+        }
+        fields = {
+            'path': '  /media/tv/one/s01e01 - remux.mkv  ',
+            'data': data_text,
+            'parentid': '  season-2  ',
+            'topparentid': 'series-2',
+            'seriesid': 'series-2',
+            'seasonid': 'season-2',
+            'primaryversionid': 'ep-3',
+            'forcedsortname': '  Episode One  ',
+            'originaltitle': '  Original One  ',
+        }
+        res = self.ok('ep-1', fields)
+        self.assertEqual(res['dirty'], before + 1)
+        item = self.item('ep-1')
+        self.assertEqual(item['Path'], '/media/tv/one/s01e01 - remux.mkv')
+        self.assertEqual(item['ParentId'], 'season-2')
+        self.assertEqual(item['TopParentId'], 'series-2')
+        self.assertEqual(item['SeriesId'], 'series-2')
+        self.assertEqual(item['SeasonId'], 'season-2')
+        self.assertEqual(item['PrimaryVersionId'], 'ep-3')
+        self.assertEqual(item['ForcedSortName'], 'Episode One')
+        self.assertEqual(item['OriginalTitle'], 'Original One')
+        self.assertEqual(item['Name'], 'Episode One')
+        self.assertEqual(item['Data'], json.dumps(
+            expected_data, ensure_ascii=False, separators=(',', ':')))
+
+        res2 = self.ok('ep-1', {'path': '/media/tv/one/changed.mkv'})
+        self.assertEqual(res2['dirty'], before + 1)
+        self.assertEqual(res2['edited'], res['edited'])
+        item2 = self.item('ep-1')
+        self.assertEqual(item2['Path'], '/media/tv/one/changed.mkv')
+        self.assertEqual(item2['Data'], item['Data'])
+        self.assertEqual(item2['ParentId'], 'season-2')
+        self.assertEqual(item2['ForcedSortName'], 'Episode One')
+
+    def test_02_data_json_validation(self):
+        self.ok('movie-2', {'data': '{"keep":true}'})
+        for bad in ('{bad', '[1,2]', '"text"', '42', 'null', 'true',
+                    '{"x": NaN}', '{"x": Infinity}', '{"x": -Infinity}'):
+            self.rejected('movie-2', {'data': bad})
+        self.rejected('movie-2', {'data': 123})
+        self.assertEqual(self.item('movie-2')['Data'], '{"keep":true}')
+
+        payload = ('{"u":"Zażółć gęślą jaźń 🎬","quote":"\\"x\\"",'
+                   '"arr":[1,true,null],"nested":{"a":1}}')
+        self.ok('movie-2', {'data': payload})
+        item = self.item('movie-2')
+        self.assertEqual(json.loads(item['Data']), json.loads(payload))
+        self.assertIn('Zażółć', item['Data'])
+        self.assertNotIn('"u": "', item['Data'])
+
+        self.ok('movie-2', {'data': ''})
+        self.assertIsNone(self.item('movie-2')['Data'])
+        self.ok('movie-2', {'data': '   '})
+        self.assertIsNone(self.item('movie-2')['Data'])
+        self.ok('movie-2', {'data': '{}'})
+        self.assertEqual(self.item('movie-2')['Data'], '{}')
+        self.ok('movie-2', {'data': None})
+        self.assertIsNone(self.item('movie-2')['Data'])
+
+    def test_03_path_validation(self):
+        self.rejected('movie-3', {'path': 123})
+        self.rejected('movie-3', {'path': 'a' * 4097})
+        self.ok('movie-3', {'path': 'a' * 4096})
+        self.assertEqual(len(self.item('movie-3')['Path']), 4096)
+        self.ok('movie-3', {'path': '  /media/ünïcode/Остров.mkv  '})
+        self.assertEqual(self.item('movie-3')['Path'], '/media/ünïcode/Остров.mkv')
+        sql_path = "'; DROP TABLE BaseItems; --"
+        self.ok('movie-3', {'path': sql_path})
+        self.assertEqual(self.item('movie-3')['Path'], sql_path)
+        status, _ = self.server.get('/api/list?limit=1')
+        self.assertEqual(status, 200)
+        self.ok('movie-3', {'path': '  /media/a\nb.mkv  '})
+        self.assertEqual(self.item('movie-3')['Path'], '/media/a\nb.mkv')
+        self.ok('movie-3', {'path': ''})
+        self.assertIsNone(self.item('movie-3')['Path'])
+
+    def test_04_hierarchy_validation(self):
+        valid = {
+            'parentid': 'series-1', 'topparentid': 'series-1',
+            'seriesid': 'series-1', 'seasonid': 'season-1',
+            'primaryversionid': 'ep-3',
+        }
+        self.ok('movie-4', valid)
+        for key in valid:
+            self.rejected('movie-4', {key: 'missing-' + key})
+        self.ok('movie-4', {key: '' for key in valid})
+        for key in valid:
+            self.rejected('movie-4', {key: 'movie-4'})
+        self.ok('movie-4', {'parentid': '  series-2  '})
+        self.assertEqual(self.item('movie-4')['ParentId'], 'series-2')
+        self.rejected('movie-4', {'parentid': 123})
+        self.rejected('movie-4', {'parentid': 'x' * 501})
+
+        self.ok('cyc-b', {'parentid': 'cyc-a'})
+        self.ok('cyc-c', {'parentid': 'cyc-b'})
+        self.rejected('cyc-a', {'parentid': 'cyc-c'})
+        self.assertIn(self.item('cyc-a')['ParentId'], ('', None))
+
+        # a chain longer than the old 100-node guard must still be rejected
+        self.rejected('target-long', {'parentid': 'chain-000'})
+        self.assertIn(self.item('target-long')['ParentId'], ('', None))
+        self.ok('movie-4', {'parentid': 'chain-110'})
+        self.assertEqual(self.item('movie-4')['ParentId'], 'chain-110')
+
+        status, _ = self.server.get('/api/item?id=missing-parent')
+        self.assertEqual(status, 400)
+        before_path = self.item('movie-4')['Path']
+        self.rejected('movie-4', {
+            'path': '/atomic/should/not/apply', 'parentid': 'missing-parent'})
+        self.assertEqual(self.item('movie-4')['Path'], before_path)
+
+    def test_05_advanced_flag_and_readonly(self):
+        self.ok('flag-1', {
+            'name': 'Flag Basic', 'path': '/ignored/path',
+            'data': '{"ignored":true}', 'parentid': 'season-1',
+            'forcedsortname': 'Ignored', 'originaltitle': 'Ignored',
+        }, advanced=False)
+        item = self.item('flag-1')
+        self.assertEqual(item['Name'], 'Flag Basic')
+        self.assertEqual(item['Path'], '/media/movies/flag.mkv')
+        self.assertIsNone(item['Data'])
+        self.assertEqual(item['ParentId'], '')
+        self.assertIsNone(item['ForcedSortName'])
+        self.assertIsNone(item['OriginalTitle'])
+
+        self.rejected('flag-1', {'path': '/ignored'}, advanced=False)
+        self.rejected('flag-1', {'unknownfield': 'x'}, advanced=True)
+        self.ok('flag-1', {'name': 'Flag Unknown', 'unknownfield': 'x'})
+        self.assertEqual(self.item('flag-1')['Name'], 'Flag Unknown')
+
+        self.rejected('flag-1', {'id': 'hacked', 'type': 'Hacked'})
+        self.ok('flag-1', {'name': 'Flag Readonly', 'id': 'hacked', 'type': 'Hacked'})
+        item = self.item('flag-1')
+        self.assertEqual(item['Id'], 'flag-1')
+        self.assertEqual(item['Type'], 'MediaBrowser.Controller.Entities.Movies.Movie')
+        self.assertEqual(item['Name'], 'Flag Readonly')
+
+        self.rejected('flag-1', {'path': '/ignored'}, advanced=False)
+        self.ok('flag-1', {'name': 'Flag Mixed', 'path': '/ignored'}, advanced=False)
+        self.assertEqual(self.item('flag-1')['Name'], 'Flag Mixed')
+        self.assertEqual(self.item('flag-1')['Path'], '/media/movies/flag.mkv')
+
+    def test_06_basic_validation(self):
+        self.rejected('basic-1', {'name': ''})
+        self.rejected('basic-1', {'name': '   '})
+        self.rejected('basic-1', {'name': 123})
+        self.ok('basic-1', {'name': 'x' * 500})
+        self.assertEqual(len(self.item('basic-1')['Name']), 500)
+        self.rejected('basic-1', {'name': 'x' * 501})
+        self.ok('basic-1', {'sortname': '  ', 'seriesname': '  '})
+        self.assertIsNone(self.item('basic-1')['SortName'])
+        self.assertIsNone(self.item('basic-1')['SeriesName'])
+
+        self.ok('basic-1', {'productionyear': 0})
+        self.assertEqual(self.item('basic-1')['ProductionYear'], 0)
+        self.ok('basic-1', {'productionyear': 9999})
+        self.assertEqual(self.item('basic-1')['ProductionYear'], 9999)
+        for bad in (-1, 10000, 'abc', 2020.5, True, False):
+            self.rejected('basic-1', {'productionyear': bad})
+        self.ok('basic-1', {'productionyear': '2020'})
+        self.assertEqual(self.item('basic-1')['ProductionYear'], 2020)
+        self.ok('basic-1', {'productionyear': 2020.0})
+        self.assertEqual(self.item('basic-1')['ProductionYear'], 2020)
+        self.ok('basic-1', {'productionyear': None})
+        self.assertIsNone(self.item('basic-1')['ProductionYear'])
+
+        self.ok('basic-1', {'indexnumber': 1000000})
+        self.assertEqual(self.item('basic-1')['IndexNumber'], 1000000)
+        self.rejected('basic-1', {'indexnumber': 1000001})
+        self.rejected('basic-1', {'indexnumber': -1})
+        self.ok('basic-1', {'parentindexnumber': 0})
+        self.assertEqual(self.item('basic-1')['ParentIndexNumber'], 0)
+
+        self.ok('basic-1', {
+            'name': 'Basic All', 'sortname': 'Basic, All',
+            'productionyear': 1999, 'indexnumber': 7,
+            'parentindexnumber': 3, 'seriesname': 'Basic Series',
+        })
+        item = self.item('basic-1')
+        self.assertEqual(item['Name'], 'Basic All')
+        self.assertEqual(item['SortName'], 'Basic, All')
+        self.assertEqual(item['ProductionYear'], 1999)
+        self.assertEqual(item['IndexNumber'], 7)
+        self.assertEqual(item['ParentIndexNumber'], 3)
+        self.assertEqual(item['SeriesName'], 'Basic Series')
+
+        self.rejected('basic-1', {'unknownbasic': 'x'})
+        status, _ = self.edit('missing', {'name': 'x'})
+        self.assertEqual(status, 400)
+        status, _ = self.server.post('/api/edit', {'id': 'basic-1', 'fields': []})
+        self.assertEqual(status, 400)
+        status, _ = self.server.post('/api/edit', {'id': 1, 'fields': {'name': 'x'}})
+        self.assertEqual(status, 400)
+
+        before = self.dirty()
+        name_before = self.item('basic-2')['Name']
+        self.rejected('basic-2', {'name': 'Atomic', 'productionyear': 10000})
+        self.assertEqual(self.item('basic-2')['Name'], name_before)
+        self.assertEqual(self.dirty(), before)
+        res = self.ok('basic-2', {'name': 'Atomic One'})
+        self.assertEqual(res['dirty'], before + 1)
+        res2 = self.ok('basic-2', {'name': 'Atomic Two'})
+        self.assertEqual(res2['dirty'], before + 1)
+
+    def test_07_original_untouched_and_reload(self):
+        original = self.original_row('movie-1')
+        self.ok('movie-1', {
+            'name': 'Movie One Edited',
+            'path': '/media/movies/edited.mkv',
+            'data': '{"Overview":"Edited overview"}',
+            'parentid': 'series-1',
+        })
+        item = self.item('movie-1')
+        self.assertEqual(item['Name'], 'Movie One Edited')
+        self.assertEqual(item['Path'], '/media/movies/edited.mkv')
+        self.assertEqual(item['ParentId'], 'series-1')
+        self.assertEqual(json.loads(item['Data']), {'Overview': 'Edited overview'})
+        self.assertEqual(self.original_row('movie-1'), original)
+
+        status, body = self.server.post('/api/reload', {})
+        self.assertEqual(status, 200, body)
+        item = self.item('movie-1')
+        self.assertEqual(
+            (item['Name'], item['Path'], item['Data'], item['ParentId']), original)
+        self.assertEqual(self.dirty(), 0)
+
+    def test_08_advanced_edit_survives_upload(self):
+        self.ok('movie-1', {
+            'name': 'Movie One Uploaded',
+            'path': '/media/movies/uploaded.mkv',
+            'data': '{"Overview":"Uploaded"}',
+            'parentid': 'series-1',
+            'forcedsortname': 'Movie One, Uploaded',
+        })
+        status, up = self.server.post(
+            '/api/upload', {'backup': False, 'ver': '10.10.7', 'force_schema': False})
+        self.assertEqual(status, 200, up)
+        self.assertEqual(self.dirty(), 0)
+        self.assertEqual(self.original_row('movie-1'), (
+            'Movie One Uploaded', '/media/movies/uploaded.mkv',
+            '{"Overview":"Uploaded"}', 'series-1'))
+        item = self.item('movie-1')
+        self.assertEqual(item['Name'], 'Movie One Uploaded')
+        self.assertEqual(item['Path'], '/media/movies/uploaded.mkv')
+        self.assertEqual(item['ParentId'], 'series-1')
+        self.assertEqual(item['ForcedSortName'], 'Movie One, Uploaded')
+        self.assertEqual(json.loads(item['Data']), {'Overview': 'Uploaded'})
+
+        status, history = self.server.get('/api/history')
+        self.assertEqual(status, 200, history)
+        rec = history['records'][0]
+        self.assertGreaterEqual(rec['edited'], 1)
+        edited = rec.get('items_edited') or []
+        self.assertTrue(any(x.get('Id') == 'movie-1' for x in edited))
 
 
 if __name__ == '__main__':

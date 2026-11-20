@@ -49,7 +49,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-APP_VERSION = '0.7.6'
+APP_VERSION = '0.9.0'
 
 IMG_TYPES = {0: 'Primary', 1: 'Art', 2: 'Backdrop', 3: 'Banner', 4: 'Logo', 5: 'Thumb',
              6: 'Disc', 7: 'Box', 8: 'Screenshot', 9: 'Menu', 10: 'Chapter',
@@ -61,7 +61,7 @@ STAT_CACHE = {}      # ścieżka -> (czas sprawdzenia, istnieje True/False/None)
 STAT_TTL = 8.0
 STATE = {'con': None, 'tmp': None, 'src': None, 'orig': None, 'work': None,
          'dirty': 0, 'sig': None, 'problems': None, 'pmap': None, 'libs': None, 'roots': [],
-         'kind': 'path', 'label': None, 'nodb_reason': None, 'unreadable': 0, 'deleted': [], 'loading': False,
+         'kind': 'path', 'label': None, 'nodb_reason': None, 'unreadable': 0, 'deleted': [], 'edited': [], 'loading': False,
          'setup': False, 'sqljob': None, 'job': None, 'dialog': True,
          'session_id': secrets.token_hex(8), 'anchor_id': None, 'session_bak': None,
          'nodb_reason_key': None, 'nodb_reason_args': {}}
@@ -358,6 +358,22 @@ def jf_detect(only_port=None):
         return {'state': 'wrong', 'port': wrong[0], 'source': wrong[1], 'info': None, 'detail': wrong[2]}
     port, source = cands[0]
     return {'state': 'off', 'port': port, 'source': source, 'info': None, 'detail': ''}
+
+
+def ensure_jf_stopped():
+    """Blokuje zapis do oryginalu, gdy Jellyfin dziala (gdy wlaczony service_check)."""
+    if not CFG['service_check']:
+        return
+    if shutil.which('systemctl'):
+        try:
+            if subprocess.run(['systemctl', 'is-active', '--quiet', 'jellyfin'],
+                              stderr=subprocess.DEVNULL).returncode == 0:
+                raise RuntimeError(tr('e_jf_running_unit'))
+        except OSError:
+            pass
+    st = jf_detect()
+    if st['state'] == 'running':
+        raise RuntimeError(tr('e_jf_running_port', port=st['port'], ver=st['info']['Version']))
 
 
 def listening_ports():
@@ -1035,7 +1051,7 @@ def open_copy(src, kind='path', label=None):
     old_con, old_tmp = STATE['con'], STATE['tmp']
     STATE.update(con=con, tmp=tmp, src=src, orig=orig, work=work, dirty=0, sig=sig,
                  problems=None, pmap=None, libs=None, roots=[], kind=kind, label=label or src,
-                 nodb_reason=None, unreadable=0, deleted=[])
+                 nodb_reason=None, unreadable=0, deleted=[], edited=[])
     if old_con:
         old_con.close()
     if old_tmp:
@@ -1074,7 +1090,7 @@ def reset_work():
         except sqlite3.Error:
             STATE['con'] = None
         raise
-    STATE.update(con=con, dirty=0, deleted=[], problems=None, pmap=None, libs=None)
+    STATE.update(con=con, dirty=0, deleted=[], edited=[], problems=None, pmap=None, libs=None)
 
 
 def q(sql, args=()):
@@ -1979,7 +1995,10 @@ def api_delete(ids, force=False):
         except Exception:
             con.execute('ROLLBACK')
             raise
-        STATE['dirty'] += deleted
+        edited = set(STATE.get('edited') or [])
+        removed_edited = edited.intersection(ids)
+        STATE['edited'] = sorted(edited - removed_edited)
+        STATE['dirty'] += deleted - len(removed_edited)
         STATE['deleted'] = list(dict.fromkeys(STATE['deleted'] + ids))
         STATE['problems'] = None
         STATE['pmap'] = None
@@ -1987,11 +2006,194 @@ def api_delete(ids, force=False):
         return {'deleted': deleted, 'requested': len(ids), 'dirty': STATE['dirty']}
 
 
+EDIT_FIELDS = {
+    'name': 'Name',
+    'sortname': 'SortName',
+    'productionyear': 'ProductionYear',
+    'indexnumber': 'IndexNumber',
+    'parentindexnumber': 'ParentIndexNumber',
+    'seriesname': 'SeriesName',
+}
+
+
+ADV_FIELDS = {
+    'parentid': 'ParentId',
+    'topparentid': 'TopParentId',
+    'seriesid': 'SeriesId',
+    'seasonid': 'SeasonId',
+    'primaryversionid': 'PrimaryVersionId',
+}
+
+
+def api_item(params):
+    rid = params.get('id', [''])[0]
+    rows = q('SELECT * FROM BaseItems WHERE Id=?', (rid,))
+    if not rows:
+        raise ValueError(tr('e_item_missing'))
+    return rows[0]
+
+
+def _base_item_columns(con):
+    try:
+        return {row[1] for row in con.execute('PRAGMA table_info(BaseItems)')}
+    except sqlite3.Error:
+        return set()
+
+
+def _json_constant(name):
+    raise ValueError(f'{name} is not valid JSON')
+
+
+def _adv_text(value, field, maxlen=500):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(tr('e_edit_invalid', field=field))
+    value = value.strip()
+    if len(value) > maxlen:
+        raise ValueError(tr('e_edit_invalid', field=field))
+    return value or None
+
+
+def _advanced_updates(con, rid, fields, columns):
+    updates, values = [], []
+    if 'path' in fields and 'Path' in columns:
+        value = fields['path']
+        if value is None:
+            value = ''
+        if not isinstance(value, str):
+            raise ValueError(tr('e_edit_invalid', field='Path'))
+        value = value.strip()
+        if len(value) > 4096:
+            raise ValueError(tr('e_edit_invalid', field='Path'))
+        updates.append(f'{qi("Path")}=?')
+        values.append(value or None)
+    if 'data' in fields and 'Data' in columns:
+        value = fields['data']
+        if value is None:
+            value = ''
+        if not isinstance(value, str):
+            raise ValueError(tr('e_edit_invalid', field='Data'))
+        value = value.strip()
+        if value:
+            try:
+                parsed = json.loads(value, parse_constant=_json_constant)
+            except ValueError as exc:
+                raise ValueError(tr('e_edit_json', err=str(exc)))
+            if not isinstance(parsed, dict):
+                raise ValueError(tr('e_edit_data_object'))
+            value = json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))
+        else:
+            value = None
+        updates.append(f'{qi("Data")}=?')
+        values.append(value)
+    for key, column in ADV_FIELDS.items():
+        if key not in fields or column not in columns:
+            continue
+        value = _adv_text(fields[key], column)
+        if value:
+            if value == rid:
+                raise ValueError(tr('e_edit_invalid', field=column))
+            if not con.execute('SELECT 1 FROM BaseItems WHERE Id=?', (value,)).fetchone():
+                raise ValueError(tr('e_edit_ref_missing', field=column, id=value))
+            if column == 'ParentId':
+                seen = set()
+                current = value
+                while current and current not in seen:
+                    if current == rid:
+                        raise ValueError(tr('e_edit_cycle'))
+                    seen.add(current)
+                    row = con.execute('SELECT ParentId FROM BaseItems WHERE Id=?', (current,)).fetchone()
+                    current = (row[0] if row else None) or None
+        updates.append(f'{qi(column)}=?')
+        values.append(value)
+    for key, column in (('forcedsortname', 'ForcedSortName'), ('originaltitle', 'OriginalTitle')):
+        if key in fields and column in columns:
+            value = _adv_text(fields[key], column)
+            updates.append(f'{qi(column)}=?')
+            values.append(value)
+    return updates, values
+
+
+def api_edit(body):
+    """Edytuje bezpieczne i zaawansowane pola BaseItems w kopii roboczej."""
+    if STATE['con'] is None:
+        raise ValueError(tr('e_no_db'))
+    body = body or {}
+    rid = body.get('id')
+    fields = body.get('fields')
+    if not isinstance(rid, str) or not rid or not isinstance(fields, dict):
+        raise ValueError(tr('e_edit_no_fields'))
+    advanced = bool(body.get('advanced'))
+    updates, values = [], []
+    for key, column in EDIT_FIELDS.items():
+        if key not in fields:
+            continue
+        value = fields[key]
+        if column in ('ProductionYear', 'IndexNumber', 'ParentIndexNumber'):
+            if value is None or (isinstance(value, str) and not value.strip()):
+                value = None
+            else:
+                if isinstance(value, bool):
+                    raise ValueError(tr('e_edit_number', field=column))
+                try:
+                    if isinstance(value, float) and not value.is_integer():
+                        raise ValueError
+                    value = int(value)
+                except (TypeError, ValueError, OverflowError):
+                    raise ValueError(tr('e_edit_number', field=column))
+                limit = 9999 if column == 'ProductionYear' else 1000000
+                if not 0 <= value <= limit:
+                    raise ValueError(tr('e_edit_number', field=column))
+        else:
+            if value is None:
+                value = ''
+            if not isinstance(value, str):
+                raise ValueError(tr('e_edit_invalid', field=column))
+            value = value.strip()
+            if column == 'Name' and not value:
+                raise ValueError(tr('e_edit_name'))
+            if len(value) > 500:
+                raise ValueError(tr('e_edit_invalid', field=column))
+            value = value or None
+        updates.append(f'{qi(column)}=?')
+        values.append(value)
+    with LOCK:
+        con = STATE['con']
+        if advanced:
+            au, av = _advanced_updates(con, rid, fields, _base_item_columns(con))
+            updates += au
+            values += av
+        if not updates:
+            raise ValueError(tr('e_edit_no_fields'))
+        values.append(rid)
+        con.execute('BEGIN')
+        try:
+            cur = con.execute('UPDATE BaseItems SET ' + ', '.join(updates) + ' WHERE Id=?', values)
+            if cur.rowcount != 1:
+                raise ValueError(tr('e_item_missing'))
+            con.execute('COMMIT')
+        except Exception:
+            con.execute('ROLLBACK')
+            raise
+        edited = set(STATE.get('edited') or [])
+        if rid not in edited:
+            STATE['dirty'] += 1
+            STATE['edited'] = sorted(edited | {rid})
+        STATE['problems'] = None
+        STATE['pmap'] = None
+        STATE['libs'] = None
+        STATE['roots'] = []
+    return {'ok': True, 'id': rid, 'dirty': STATE['dirty'], 'edited': len(STATE['edited'])}
+
+
 def rebase_work():
     """Oryginał zmienił się od pobrania kopii (typowo: Jellyfin zapisuje bazę przy zamykaniu).
     Pobiera go ponownie i stosuje te same usunięcia (po GUID), więc zmiany Jellyfina zostają zachowane."""
     ids = list(STATE['deleted'])
     before = STATE['dirty']
+    if STATE.get('edited'):
+        raise RuntimeError(tr('e_rebase_edited'))
     with LOCK:
         open_copy(STATE['src'])
     if STATE['sig'] is None:
@@ -2044,14 +2246,7 @@ def api_upload(do_backup, ver='', force_schema=False):
     src = STATE['src']
     if STATE['dirty'] == 0:
         raise ValueError(tr('e_no_changes'))
-    if CFG['service_check'] and shutil.which('systemctl'):
-        if subprocess.run(['systemctl', 'is-active', '--quiet', 'jellyfin'],
-                          stderr=subprocess.DEVNULL).returncode == 0:
-            raise RuntimeError(tr('e_jf_running_unit'))
-    if CFG['service_check']:
-        st = jf_detect()
-        if st['state'] == 'running':
-            raise RuntimeError(tr('e_jf_running_port', port=st['port'], ver=st['info']['Version']))
+    ensure_jf_stopped()
     folder = os.path.dirname(os.path.abspath(src))
     writable = IS_ROOT or (os.access(src, os.W_OK) and os.access(folder, os.W_OK))
     if not writable and not priv_alive():
@@ -2286,6 +2481,8 @@ def history_add(ver, snapshot_path):
     add_ids = cur_ids - orig_ids
     removed = db_rows(STATE['orig'], rem_ids)
     added = db_rows(STATE['work'], add_ids)
+    edited_ids = sorted(STATE.get('edited') or [])
+    edited = db_rows(STATE['work'], edited_ids) if edited_ids else []
 
     os.makedirs(HISTORY_DIR, exist_ok=True)
     rid = time.strftime('%Y%m%d-%H%M%S')
@@ -2299,8 +2496,9 @@ def history_add(ver, snapshot_path):
     dst = os.path.join(folder, base)
     shutil.copyfile(snapshot_path, dst)
     rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'), 'ver': (ver or '').strip(),
-           'removed': len(rem_ids), 'added': len(add_ids),
+           'removed': len(rem_ids), 'added': len(add_ids), 'edited': len(edited_ids),
            'items_removed': removed[:1000], 'items_added': added[:1000],
+           'items_edited': edited[:1000],
            'size': os.path.getsize(dst), 'file': rid + '/' + base, 'db_name': base}
     history_save([rec] + history_load())
     history_prune()
@@ -2329,7 +2527,7 @@ def history_add_anchor(ver=''):
         out.close()
         con.close()
     rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'), 'ver': (ver or '').strip(),
-           'removed': 0, 'added': 0, 'items_removed': [], 'items_added': [],
+           'removed': 0, 'added': 0, 'edited': 0, 'items_removed': [], 'items_added': [], 'items_edited': [],
            'size': os.path.getsize(dst), 'file': rid + '/' + base, 'db_name': base,
            'role': 'anchor', 'session': STATE.get('session_id')}
     history_save([rec] + history_load())
@@ -2411,8 +2609,147 @@ def prune_bak_files(db_path):
     return removed
 
 
+def _is_within(child, parent):
+    child = os.path.normcase(os.path.abspath(child))
+    parent = os.path.normcase(os.path.abspath(parent))
+    return child == parent or child.startswith(parent + os.sep)
+
+
+def _dir_entries(path):
+    try:
+        return os.listdir(path)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return ['?']
+
+
+def _tree_bytes(path):
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(path):
+        for name in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+            except OSError:
+                pass
+    return total
+
+
+def change_data_dir(path, force=False):
+    """Przenosi historie/backupy do nowego folderu i przeladowuje baze ze zrodla."""
+    old = os.path.abspath(DATA_DIR)
+    new = os.path.abspath(os.path.expanduser((path or '').strip()))
+    if not new:
+        raise ValueError(tr('e_dir_missing'))
+    if os.path.normcase(new) == os.path.normcase(old):
+        return {'ok': True, 'data_dir': old, 'persisted': True,
+                'moved': {'history': 0, 'backups': 0}, 'reloaded': False}
+    if _is_within(new, old) or _is_within(old, new):
+        raise ValueError(tr('e_data_dir_nested'))
+    if STATE.get('kind') == 'upload' and STATE.get('con') is not None:
+        raise ValueError(tr('e_data_dir_upload'))
+    if STATE.get('dirty') and not force:
+        raise ValueError(tr('e_data_dir_dirty'))
+    new = valid_data_dir(new)
+    for sub in ('history', 'backups'):
+        target = os.path.join(new, sub)
+        if os.path.exists(target) and not os.path.isdir(target):
+            raise ValueError(tr('e_data_dir_not_empty', path=target))
+        if _dir_entries(target):
+            raise ValueError(tr('e_data_dir_not_empty', path=target))
+    legacy = os.path.join(new, 'tmp', 'history')
+    if _dir_entries(legacy):
+        raise ValueError(tr('e_data_dir_not_empty', path=legacy))
+
+    with LOCK:
+        total = _tree_bytes(os.path.join(old, 'history')) + _tree_bytes(os.path.join(old, 'backups'))
+        job_set('move', 0, total or 1)
+        done = 0
+        moved = {'history': 0, 'backups': 0}
+        moved_files = []
+        try:
+            for sub in ('history', 'backups'):
+                src = os.path.join(old, sub)
+                dst = os.path.join(new, sub)
+                if not os.path.isdir(src):
+                    continue
+                entries = []
+                for dirpath, _dirnames, filenames in os.walk(src):
+                    for name in filenames:
+                        entries.append((dirpath, name))
+                # index.json last: a crash cannot leave an index pointing at unmoved files
+                entries.sort(key=lambda item: (item[1] == 'index.json', item[0], item[1]))
+                for dirpath, name in entries:
+                    rel = os.path.relpath(dirpath, src)
+                    target = dst if rel == '.' else os.path.join(dst, rel)
+                    os.makedirs(target, exist_ok=True)
+                    source = os.path.join(dirpath, name)
+                    dest = os.path.join(target, name)
+                    size = os.path.getsize(source)
+                    shutil.move(source, dest)
+                    moved_files.append((source, dest))
+                    done += size
+                    moved[sub] += 1
+                    job_set('move', done, total or 1)
+                shutil.rmtree(src, ignore_errors=True)
+        except Exception:
+            for source, dest in reversed(moved_files):
+                try:
+                    if os.path.exists(dest) and not os.path.exists(source):
+                        os.makedirs(os.path.dirname(source), exist_ok=True)
+                        shutil.move(dest, source)
+                except OSError:
+                    pass
+            job_set('done', 1, 1)
+            raise
+
+        SETTINGS['data_dir'] = new
+        persisted = save_settings()
+        configure_data_dir(new)
+        migrate_history()
+        for sub in ('history', 'backups'):
+            try:
+                os.makedirs(os.path.join(new, sub), exist_ok=True)
+            except OSError:
+                pass
+        STATE['setup'] = False
+
+        reloaded = False
+        reload_error = ''
+        con = STATE.get('con')
+        try:
+            if con is not None:
+                src = STATE.get('src')
+                kind = STATE.get('kind')
+                STATE.update(con=None, dirty=0, deleted=[], edited=[], problems=None, pmap=None)
+                try:
+                    con.close()
+                except sqlite3.Error:
+                    pass
+                if kind == 'path' and src:
+                    STATE['loading'] = True
+                    try:
+                        open_copy(src)
+                        reloaded = True
+                    except (OSError, ValueError, RuntimeError, sqlite3.Error) as e:
+                        reload_error = str(e)
+                        STATE['nodb_reason'] = reload_error
+                        STATE['nodb_reason_key'] = e.key if isinstance(e, DbError) else None
+                        STATE['nodb_reason_args'] = e.kw if isinstance(e, DbError) else {}
+                    finally:
+                        STATE['loading'] = False
+        finally:
+            job_set('done', 1, 1)
+        return {'ok': True, 'data_dir': new, 'persisted': persisted,
+                'moved': moved, 'reloaded': reloaded, 'reload_error': reload_error}
+
+
 def api_settings(body):
     body = body or {}
+    if 'service_auto' in body:
+        SETTINGS['service_auto'] = bool(body.get('service_auto'))
+        persisted = save_settings()
+        return {'ok': True, 'persisted': persisted, 'service_auto': SETTINGS['service_auto']}
     if any(k in body for k in ('history_max', 'history_max_size_mb', 'bak_keep')):
         if 'history_max' in body:
             try:
@@ -2446,16 +2783,7 @@ def api_settings(body):
         return {'ok': True, 'persisted': persisted, 'history_max': history_limit(),
                 'history_max_size_mb': history_max_size_mb(), 'bak_keep': bak_keep_limit()}
     if 'data_dir' in body:
-        p = valid_data_dir(str(body.get('data_dir') or ''))
-        SETTINGS['data_dir'] = p
-        persisted = save_settings()
-        configure_data_dir(p)
-        migrate_history()
-        try:
-            os.makedirs(HISTORY_DIR, exist_ok=True)
-        except OSError:
-            pass
-        return {'ok': True, 'persisted': persisted, 'data_dir': p}
+        return change_data_dir(str(body.get('data_dir') or ''), bool(body.get('force')))
     raise ValueError(tr('e_unknown_action'))
 
 
@@ -2507,6 +2835,12 @@ def backups_dir():
     return d
 
 
+def working_backups_dir():
+    d = os.path.join(backups_dir(), 'working-copy')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def backups_index_path():
     return os.path.join(backups_dir(), 'index.json')
 
@@ -2543,27 +2877,75 @@ def last_known_jf_version():
 def api_backup(body):
     if STATE['con'] is None:
         raise ValueError(tr('e_no_db'))
-    ver = str((body or {}).get('ver') or last_known_jf_version() or '').strip()
+    body = body or {}
+    working = bool(body.get('working'))
+    if not working and STATE.get('kind') != 'upload':
+        ensure_jf_stopped()
+    ver = str(body.get('ver') or last_known_jf_version() or '').strip()
     stamp = time.strftime('%Y-%m-%d_%H-%M-%S')
     rid = time.strftime('%Y%m%d-%H%M%S')
-    path = os.path.join(backups_dir(), f'jellyfin-{stamp}.db')
+    folder = working_backups_dir() if working else backups_dir()
+    path = os.path.join(folder, f'jellyfin-{stamp}.db')
     n = 1
     while os.path.exists(path):
         n += 1
-        path = os.path.join(backups_dir(), f'jellyfin-{stamp}-{n}.db')
+        path = os.path.join(folder, f'jellyfin-{stamp}-{n}.db')
         rid = time.strftime('%Y%m%d-%H%M%S') + '-' + str(n)
+    if working:
+        with LOCK:
+            job_set('backup', 0, 1)
+            w = sqlite3.connect(path)
+            try:
+                def _bp(status, remaining, total_pages):
+                    job_set('backup', (total_pages - remaining) if total_pages else None, total_pages)
+                STATE['con'].backup(w, pages=2048, progress=_bp)
+            finally:
+                w.close()
+        job_set('done', 1, 1)
+        rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
+               'ver': ver, 'source': 'working',
+               'size': os.path.getsize(path), 'file': os.path.basename(path)}
+        return {'ok': True, 'path': path, **rec}
+    source = 'working'
     with LOCK:
         job_set('backup', 0, 1)
-        w = sqlite3.connect(path)
-        try:
-            def _bp(status, remaining, total_pages):
-                job_set('backup', (total_pages - remaining) if total_pages else None, total_pages)
-            STATE['con'].backup(w, pages=2048, progress=_bp)
-        finally:
-            w.close()
+        src = STATE.get('src')
+        # Ręczny backup kopiuje ŻYWY oryginał (db + -wal/-shm), nie kopię roboczą.
+        # Tryb upload nie ma oryginału, więc tam pozostaje snapshot kopii roboczej.
+        if STATE.get('kind') == 'path' and src and os.path.exists(src):
+            scratch = tempfile.mkdtemp(prefix='jfbak_', dir=work_tmp())
+            try:
+                live = os.path.join(scratch, 'live.db')
+                copy_db_files(src, live)
+                o = ro_connect(live)
+                w = sqlite3.connect(path)
+                try:
+                    def _bp(status, remaining, total_pages):
+                        job_set('backup', (total_pages - remaining) if total_pages else None, total_pages)
+                    o.backup(w, pages=2048, progress=_bp)
+                finally:
+                    w.close()
+                    o.close()
+                source = 'original'
+            except Exception:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                raise
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
+        else:
+            w = sqlite3.connect(path)
+            try:
+                def _bp(status, remaining, total_pages):
+                    job_set('backup', (total_pages - remaining) if total_pages else None, total_pages)
+                STATE['con'].backup(w, pages=2048, progress=_bp)
+            finally:
+                w.close()
     job_set('done', 1, 1)
     rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
-           'ver': ver,
+           'ver': ver, 'source': source,
            'size': os.path.getsize(path), 'file': os.path.basename(path)}
     backups_save([rec] + backups_load())
     return {'ok': True, 'path': path, **rec}
@@ -2611,11 +2993,66 @@ def api_backups_post(body):
             pass
         backups_save([r for r in recs if r.get('id') != rid])
         return {'ok': True, 'deleted': rid, 'path': path}
+    if action == 'revert':
+        rec = next((r for r in recs if r.get('id') == rid), None)
+        if not rec:
+            raise ValueError(tr('e_backup_missing'))
+        path = os.path.join(backups_dir(), rec.get('file') or '')
+        if not os.path.exists(path):
+            raise ValueError(tr('e_backup_file_missing'))
+        backup = revert_database(path, bool(body.get('force_schema')), bool(body.get('backup')))
+        return {'ok': True, 'id': rid, 'backup': backup}
     raise ValueError(tr('e_unknown_action'))
 
 
 def api_job():
     return STATE.get('job') or {}
+
+
+def revert_database(source, force_schema=False, make_backup=False):
+    """Podmienia oryginalną bazę plikiem źródłowym (historia lub ręczna kopia)."""
+    if STATE['kind'] == 'upload':
+        raise ValueError(tr('e_upload_mode'))
+    src = STATE['src']
+    if STATE['con'] is None or not STATE.get('orig') or not src:
+        raise ValueError(tr('e_no_db'))
+    ensure_jf_stopped()
+    folder = os.path.dirname(os.path.abspath(src))
+    writable = IS_ROOT or (os.access(src, os.W_OK) and os.access(folder, os.W_OK))
+    if not writable and not priv_alive():
+        raise NeedAdmin(tr('e_write_src', src=src))
+    st = fs_stat_many([src])[0]
+    if not st['e']:
+        raise RuntimeError(tr('e_read_src', src=src))
+
+    c = ro_connect(source)
+    try:
+        res = c.execute('PRAGMA quick_check').fetchone()[0]
+    finally:
+        c.close()
+    if res != 'ok':
+        raise RuntimeError(tr('e_quickcheck', res=str(res)))
+
+    missing = schema_missing(STATE['orig'], source)
+    if missing and not force_schema:
+        raise SchemaWarning(tr('e_schema_blocked', tables=', '.join(missing)), missing)
+
+    scratch = tempfile.mkdtemp(prefix='jfup_', dir=work_tmp())
+    backup = None
+    try:
+        if make_backup:
+            backup = free_backup_name(src)
+            tb = os.path.join(scratch, 'backup.db')
+            copy_from_protected(src, tb)
+            install_file(tb, backup, st)
+        install_file(source, src, st)      # atomowa podmiana (zapis obok + rename)
+        for suf in ('-wal', '-shm'):       # stare pliki WAL/SHM nie mogą zostać przy nowej bazie
+            remove_file(src + suf)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    with LOCK:
+        open_copy(src)
+    return backup
 
 
 def api_revert(body):
@@ -2628,52 +3065,7 @@ def api_revert(body):
     hist = history_file(rec)
     if not os.path.exists(hist):
         raise ValueError(tr('e_history_file_missing'))
-    if STATE['kind'] == 'upload':
-        raise ValueError(tr('e_upload_mode'))
-    src = STATE['src']
-    if CFG['service_check'] and shutil.which('systemctl'):
-        if subprocess.run(['systemctl', 'is-active', '--quiet', 'jellyfin'],
-                          stderr=subprocess.DEVNULL).returncode == 0:
-            raise RuntimeError(tr('e_jf_running_unit'))
-    if CFG['service_check']:
-        st = jf_detect()
-        if st['state'] == 'running':
-            raise RuntimeError(tr('e_jf_running_port', port=st['port'], ver=st['info']['Version']))
-    folder = os.path.dirname(os.path.abspath(src))
-    writable = IS_ROOT or (os.access(src, os.W_OK) and os.access(folder, os.W_OK))
-    if not writable and not priv_alive():
-        raise NeedAdmin(tr('e_write_src', src=src))
-    st = fs_stat_many([src])[0]
-    if not st['e']:
-        raise RuntimeError(tr('e_read_src', src=src))
-
-    c = ro_connect(hist)
-    try:
-        res = c.execute('PRAGMA quick_check').fetchone()[0]
-    finally:
-        c.close()
-    if res != 'ok':
-        raise RuntimeError(tr('e_quickcheck', res=str(res)))
-
-    missing = schema_missing(STATE['orig'], hist)
-    if missing and not body.get('force_schema'):
-        raise SchemaWarning(tr('e_schema_blocked', tables=', '.join(missing)), missing)
-
-    scratch = tempfile.mkdtemp(prefix='jfup_', dir=work_tmp())
-    backup = None
-    try:
-        if body.get('backup'):
-            backup = free_backup_name(src)
-            tb = os.path.join(scratch, 'backup.db')
-            copy_from_protected(src, tb)
-            install_file(tb, backup, st)
-        install_file(hist, src, st)        # atomowa podmiana (zapis obok + rename)
-        for suf in ('-wal', '-shm'):       # stare pliki WAL/SHM nie mogą zostać przy nowej bazie
-            remove_file(src + suf)
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-    with LOCK:
-        open_copy(src)
+    backup = revert_database(hist, bool(body.get('force_schema')), bool(body.get('backup')))
     return {'ok': True, 'id': rid, 'backup': backup}
 
 
@@ -3072,7 +3464,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path not in ('/api/delete', '/api/upload', '/api/reload', '/api/open', '/api/load', '/api/jellyfin',
                               '/api/priv', '/api/service', '/api/pick', '/api/settings', '/api/history', '/api/revert',
                               '/api/setup', '/api/pickdir', '/api/import-sql', '/api/backup', '/api/backups', '/api/pickpath',
-                              '/api/export', '/api/export-sql', '/api/orphans'):
+                              '/api/export', '/api/export-sql', '/api/orphans', '/api/edit'):
                 self.send_error(404)
                 return
             if u.path in ('/api/export', '/api/export-sql'):
@@ -3132,6 +3524,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b'{}')
             if u.path == '/api/delete':
                 self.send_json(api_delete(body.get('ids'), bool(body.get('force'))))
+            elif u.path == '/api/edit':
+                self.send_json(api_edit(body))
             elif u.path == '/api/upload':
                 self.send_json(api_upload(bool(body.get('backup')), str(body.get('ver') or ''),
                                           bool(body.get('force_schema'))))
@@ -3214,7 +3608,8 @@ class Handler(BaseHTTPRequestHandler):
                                 'nodb_reason': (tr(STATE['nodb_reason_key'], **STATE.get('nodb_reason_args', {}))
                                                 if STATE.get('nodb_reason_key') else STATE['nodb_reason']),
                                 'loading': STATE.get('loading', False), 'setup': STATE.get('setup', False),
-                                'dialog': STATE.get('dialog', True)})
+                                'dialog': STATE.get('dialog', True),
+                                'service_auto': bool(SETTINGS.get('service_auto'))})
             elif u.path == '/api/setup':
                 self.send_json(setup_state())
             elif u.path == '/api/types':
@@ -3225,6 +3620,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(api_tree(p))
             elif u.path == '/api/problems':
                 self.send_json(api_problems(p))
+            elif u.path == '/api/item':
+                self.send_json(api_item(p))
             elif u.path == '/api/disks':
                 self.send_json(api_disks(p))
             elif u.path == '/api/history':
@@ -3255,6 +3652,12 @@ class Handler(BaseHTTPRequestHandler):
                 serve_image(self, p)
             else:
                 self.send_error(404)
+        except NeedAdmin as e:
+            self.send_json({'error': str(e), 'need_admin': True}, 403)
+        except ValueError as e:
+            self.send_json({'error': str(e)}, 400)
+        except (RuntimeError, sqlite3.Error) as e:
+            self.send_json({'error': str(e)}, 400)
         except Exception as e:  # log po stronie serwera, klient dostaje ogólny komunikat
             print(f'GET {u.path}: {e!r}', file=sys.stderr)
             try:
