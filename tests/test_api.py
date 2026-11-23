@@ -914,5 +914,117 @@ class AdvancedEditTests(unittest.TestCase):
         self.assertTrue(any(x.get('Id') == 'movie-1' for x in edited))
 
 
+class CompareApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        cls.tmp = tempfile.mkdtemp(prefix='jfcmpapi_')
+        cls.db = os.path.join(cls.tmp, 'jellyfin.db')
+        create_test_db(cls.db)
+        with open(os.path.join(cls.tmp, 'device.txt'), 'w', encoding='utf-8') as f:
+            f.write('a' * 32)
+        cls.bak = os.path.join(cls.tmp, 'jellyfin.db-2026-01-01_00-00-00.bak')
+        shutil.copyfile(cls.db, cls.bak)
+        cls.server = Server(cls.db)
+        cls.other = os.path.join(cls.tmp, 'other.db')
+        shutil.copyfile(cls.db, cls.other)
+        con = sqlite3.connect(cls.other)
+        try:
+            con.execute("UPDATE BaseItems SET Name='Item 010 changed' WHERE Id='item-010'")
+            con.execute("DELETE FROM BaseItems WHERE Id='item-011'")
+            con.execute("INSERT INTO BaseItems (Id, Name, Type, Path, ProductionYear) VALUES "
+                        "('item-999','New item','MediaBrowser.Controller.Entities.Movies.Movie','/media/new.mkv',2024)")
+            con.commit()
+        finally:
+            con.close()
+        cls.other_instance = os.path.join(cls.tmp, 'other-instance')
+        os.makedirs(cls.other_instance)
+        cls.other_instance_db = os.path.join(cls.other_instance, 'jellyfin.db')
+        shutil.copyfile(cls.db, cls.other_instance_db)
+        with open(os.path.join(cls.other_instance, 'device.txt'), 'w', encoding='utf-8') as f:
+            f.write('b' * 32)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.close()
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_options_lists_baks(self):
+        status, options = self.server.get('/api/compare')
+        self.assertEqual(status, 200, options)
+        self.assertEqual(options['a'], self.db)
+        self.assertIn(self.bak, [b['path'] for b in options['baks']])
+
+    def test_compare_added_removed_changed(self):
+        status, res = self.server.post('/api/compare', {'path': self.other})
+        self.assertEqual(status, 200, res)
+        self.assertEqual(res['counts']['changed'], 1)
+        self.assertEqual(res['counts']['removed'], 1)
+        self.assertEqual(res['counts']['added'], 1)
+        self.assertEqual(res['instance']['verdict'], 'same')
+        self.assertFalse(res['schema']['mismatch'])
+        self.assertEqual(res['changed'][0]['id'], 'item-010')
+        self.assertEqual(res['changed'][0]['fields'][0]['name'], 'Name')
+
+    def test_compare_different_instance_device_txt(self):
+        status, res = self.server.post('/api/compare', {'path': self.other_instance_db})
+        self.assertEqual(status, 200, res)
+        self.assertEqual(res['instance']['verdict'], 'different')
+        self.assertEqual(res['instance']['reason'], 'device')
+
+    def test_compare_missing_file(self):
+        status, res = self.server.post('/api/compare', {'path': os.path.join(self.tmp, 'missing.db')})
+        self.assertEqual(status, 400, res)
+        self.assertIn('error', res)
+
+
+class BakPromptApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix='jfbakprompt_')
+        cls.db = os.path.join(cls.tmp, 'jellyfin.db')
+        create_test_db(cls.db)
+        now = time.time()
+        for i in range(21):
+            p = os.path.join(cls.tmp, f'jellyfin.db-2026-01-{i + 1:02d}_00-00-00.bak')
+            with open(p, 'wb') as f:
+                f.write(b'bak')
+            os.utime(p, (now + i, now + i))
+        cls.server = Server(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.close()
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def baks(self):
+        return [n for n in os.listdir(self.tmp)
+                if n.startswith('jellyfin.db-') and n.endswith('.bak')]
+
+    def test_prompt_dismiss_and_cleanup(self):
+        status, info = self.server.get('/api/info')
+        self.assertEqual(status, 200, info)
+        prompt = info.get('bak_prompt')
+        self.assertEqual(prompt['count'], 21)
+        self.assertEqual(prompt['limit'], 10)
+        self.assertEqual(len(self.baks()), 21)
+
+        status, dismissed = self.server.post('/api/bak', {'action': 'dismiss'})
+        self.assertEqual(status, 200, dismissed)
+        status, info = self.server.get('/api/info')
+        self.assertIsNone(info.get('bak_prompt'))
+        self.assertEqual(len(self.baks()), 21)
+
+        status, result = self.server.post('/api/bak', {'action': 'cleanup'})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result['removed'], 11)
+        self.assertEqual(result['failed'], 0)
+        self.assertEqual(len(self.baks()), 10)
+        status, info = self.server.get('/api/info')
+        self.assertIsNone(info.get('bak_prompt'))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,8 +1,29 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Jellyfin DB editor</title>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Jellyfin DB editor</title>
+<script>
+try{
+  var _theme=localStorage.getItem('jfb_theme')||'auto';
+  if(_theme!=='light'&&_theme!=='dark')_theme='auto';
+  var _sys='';
+  try{var _st=new URLSearchParams(location.search).get('system_theme');if(_st==='dark'||_st==='light')_sys=_st}catch(e){}
+  document.documentElement.setAttribute('data-theme',_theme);
+  document.documentElement.setAttribute('data-system-theme',_sys);
+  document.documentElement.style.colorScheme=_theme==='dark'?'dark':_theme==='light'?'light':(_sys||'light dark');
+}catch(e){}
+</script>
 <style>
+html,body{background:Canvas;color:CanvasText}
+html[data-theme="light"]{color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark}
 :root{color-scheme:light dark;--b:rgba(128,128,128,.35);--accent:#1565c0}
 #busy{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;display:none;overflow:hidden;pointer-events:none}
+#bootloading{position:fixed;inset:21px 0 0;z-index:18;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:Canvas;color:CanvasText;font-size:14px}
+#bootloading.done{display:none}
+.bootspin{width:28px;height:28px;border:3px solid var(--b);border-top-color:#1565c0;border-radius:50%;animation:bspin .8s linear infinite}
+.boottext{opacity:.78}
+#bootpct{font-variant-numeric:tabular-nums;margin-left:6px}
+.bootbar{width:260px;max-width:70vw;height:6px;border-radius:3px;background:var(--b);overflow:hidden}
+#bootbarfill{height:100%;width:0;background:#1565c0;transition:width .25s ease}
 #busy.on{display:block}
 #busy::before{content:'';position:absolute;inset:0;width:40%;background:linear-gradient(90deg,transparent,rgba(21,101,192,.85),transparent);animation:bslide 1.1s linear infinite}
 @keyframes bslide{from{transform:translateX(-100%)}to{transform:translateX(350%)}}
@@ -61,9 +82,21 @@ body.leftcollapsed #splitcol{opacity:.85}
 .col{display:flex;flex-direction:column;gap:6px}
 .svcauto{display:flex;align-items:flex-start;gap:6px;font-size:12px;cursor:pointer}
 .svcauto input{margin:2px 0 0;flex:none}
+.svcauto span{white-space:normal;overflow-wrap:anywhere}
+.dstat.svcautonote{display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.35;max-width:100%}
 .row2{display:flex;gap:6px}.row2 button{flex:1}
+#theme{font:inherit;padding:4px 6px;border:1px solid var(--b);border-radius:4px;background:Canvas;color:CanvasText;max-width:240px}
 .win{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.55);z-index:30;padding-top:6vh;overflow:auto}
 .winbox{background:Canvas;color:CanvasText;border:1px solid var(--b);border-radius:8px;padding:14px 16px 16px;width:min(520px,94vw);display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+#win_settings{padding-top:2.5vh}
+#win_settings .winbox{width:min(1000px,96vw);max-height:none}
+.settings-grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:10px;align-items:start}
+.settings-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.settings-sec{display:flex;flex-direction:column;gap:6px;min-width:0;border:1px solid var(--b);border-radius:7px;padding:8px 10px;background:rgba(128,128,128,.035)}
+.settings-sec .secname{margin:0}
+.settings-sec hr{margin:4px 0}
+#win_settings .settings-sec span[style*="font-size:12px"]{font-size:11px!important;line-height:1.3}
+@media(max-width:640px){.settings-grid{grid-template-columns:1fr}}
 .winhead{display:flex;align-items:center;gap:10px}
 .winhead h3{margin:0;flex:1}
 .winhead .x{background:transparent;border:0;color:inherit;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px}
@@ -179,6 +212,40 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
 .hline.m{color:#e5534b}.hline.p{color:#3fb950}
 .hsub{opacity:.55;margin:6px 0 2px;font-size:11px}
 #hmaxmsg{font-size:12px;min-height:1.1em}
+.cmpbox{width:min(1100px,96vw);max-height:88vh}
+.cmpsrc{font-family:ui-monospace,monospace;font-size:11.5px;opacity:.75;word-break:break-all}
+.cmpbanner{border:1px solid var(--b);border-radius:6px;padding:7px 9px;font-size:12px;display:flex;flex-direction:column;gap:3px}
+.cmpbanner.same{border-color:#2e7d32;background:rgba(46,125,50,.1)}
+.cmpbanner.different{border-color:#c62828;background:rgba(198,40,40,.1)}
+.cmpbanner.unknown{border-color:#d29922;background:rgba(210,153,34,.1)}
+.cmpbanner b{font-size:13px}
+.cmpnote{opacity:.65;font-size:11px}
+.cmpsummary{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px}
+.cmpcount{border:1px solid var(--b);border-radius:10px;padding:1px 8px;cursor:pointer;background:transparent;color:inherit;font-size:12px}
+.cmpcount.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.cmpcount.add{color:#3fb950}.cmpcount.rem{color:#e5534b}.cmpcount.chg{color:#d29922}
+#cmpq{flex:1;min-width:120px}
+#cmplist{max-height:46vh;overflow:auto;border-top:1px solid var(--b)}
+.cmprow{border-bottom:1px solid var(--b)}
+.cmphead{display:flex;gap:7px;align-items:center;padding:5px 4px;cursor:pointer;font-size:12px}
+.cmphead:hover{background:rgba(128,128,128,.12)}
+.cmpsign{width:16px;text-align:center;font-weight:700;flex:none}
+.cmprow.add .cmpsign{color:#3fb950}.cmprow.rem .cmpsign{color:#e5534b}.cmprow.chg .cmpsign{color:#d29922}
+.cmpname{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:36%}
+.cmptype{opacity:.65;font-size:11px;white-space:nowrap}
+.cmppath{opacity:.55;font-family:ui-monospace,monospace;font-size:10.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmpid{opacity:.4;font-family:ui-monospace,monospace;font-size:10px;white-space:nowrap}
+.cmpbody{display:none;padding:2px 4px 8px 27px}
+.cmpbody.open{display:block}
+.cmpfield{border-top:1px dashed var(--b);padding:4px 0;font-size:11.5px}
+.cmpfname{font-family:ui-monospace,monospace;font-weight:600;font-size:11px;opacity:.75}
+.cmpvals{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px}
+.cmpval{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,monospace;font-size:11px;background:rgba(128,128,128,.08);border-radius:4px;padding:3px 5px;max-height:160px;overflow:auto}
+.cmpval.a{border-left:2px solid #e5534b}.cmpval.b{border-left:2px solid #3fb950}
+.cmpval.null{opacity:.55;font-style:italic}
+.cmpdiff{white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:11px;background:rgba(128,128,128,.08);border-radius:4px;padding:4px 6px;max-height:220px;overflow:auto;margin-top:3px}
+.cmpdiff .add{color:#3fb950}.cmpdiff .del{color:#e5534b}.cmpdiff .hunk{color:#58a6ff}
+.cmpmsg{font-size:12px;min-height:1.1em}
 </style></head><body>
 <div id="busy"></div>
 <div id="topbar"><div id="menubar">
@@ -187,6 +254,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
   <button id="m_conn" data-i18n="menu_connection">Połączenie</button>
   <button id="m_history" data-i18n="menu_history">Historia</button>
   <button id="m_sql" data-i18n="menu_sql">SQL</button>
+  <button id="m_compare" data-i18n="menu_compare">Porównaj</button>
   <div id="langwrap">
     <button id="m_lang" data-i18n="menu_languages">Języki ▾</button>
     <div id="langmenu"></div>
@@ -198,6 +266,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <span id="version">__VERSION__</span>
   </span>
 </div></div>
+<div id="bootloading" role="status" aria-live="polite"><div class="bootspin"></div><div class="boottext"><span data-i18n="loading_db">Ładowanie bazy…</span><span id="bootpct">0%</span></div><div class="bootbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bootbarfill"></div></div></div>
 <div id="main">
 <div id="left">
   <div class="top">
@@ -239,52 +308,68 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
 </div>
 </div>
 
-<div class="win" id="win_settings"><div class="winbox">
+<div class="win" id="win_settings"><div class="winbox settingsbox">
   <div class="winhead"><h3 data-i18n="menu_settings">Ustawienia</h3><button class="x" data-win="win_settings" data-i18n-title="close" title="Zamknij">✕</button></div>
-  <div class="dbsub" id="dbsum"></div>
-  <div class="dbsub" id="datadir" style="color:inherit;opacity:.6"></div>
-  <button id="datadirpick" data-i18n="data_dir_change">Zmień folder danych…</button>
-  <div id="datadirmsg" class="dstat"></div>
-  <div class="col">
-    <div id="status"></div>
-    <div id="jobwrap"><div id="jobbar"></div></div>
-    <div id="jobmsg" class="dstat"></div>
-    <button id="reload" data-i18n="reload">⟳ Odśwież z oryginału (odrzuca zmiany)</button>
-    <label><input type="checkbox" id="bk" checked> <span data-i18n="backup_label">kopia zapasowa oryginału przed Upload</span><br>
-      <span style="opacity:.65;font-size:12px" data-i18n="backup_note">(jellyfin.db-DATA_godzina.bak w folderze bazy)</span></label>
-    <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
-    <button id="openpath" data-i18n="open_path">📂 Wczytaj bazę z innej ścieżki…</button>
-    <button id="openfile" data-i18n="open_file">📁 Wczytaj plik bazy z komputera…</button>
-    <button id="pickfile" data-i18n="pick_file">🖥 Wybierz plik (okno systemowe)…</button>
-    <input type="file" id="filein" accept=".db,.sqlite,.sqlite3" tabindex="-1" style="position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0">
-    <button id="export" data-i18n="export_btn">⬇ Eksportuj kopię roboczą (.db)</button>
-    <span style="opacity:.65;font-size:12px" data-i18n="export_warn">Plik zawiera całą bazę, także konta i hashe haseł. Nie udostępniaj go.</span>
-  </div>
-  <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
-  <div class="col">
-    <b class="secname" data-i18n="orph_section">Sieroty w tabelach powiązanych</b>
-    <div class="row2"><button id="orphcheck" data-i18n="orph_check">Sprawdź sieroty</button><button id="orphclean" class="danger" style="display:none" data-i18n="orph_clean">Wyczyść sieroty</button></div>
-    <div id="orphmsg" class="dstat"></div>
-  </div>
-  <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
-  <div class="col">
-    <div class="row2"><b class="secname" data-i18n="disk_section">Dyski</b><button id="diskrefresh" data-i18n="disk_check">Sprawdź ponownie</button></div>
-    <div id="disks"></div>
-  </div>
-  <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
-  <div class="col">
-    <label for="hmax" data-i18n="history_max_label">Maksymalna liczba zapisanych baz</label>
-    <div class="row2"><input type="number" id="hmax" min="1" max="50" value="5"><button id="hmaxsave" data-i18n="port_save">Zapisz</button></div>
-    <span style="opacity:.65;font-size:12px" data-i18n="history_max_note">Domyślnie 5. Każdy Upload zapisuje kopię bazy w folderze history.</span>
-    <span style="opacity:.65;font-size:12px" data-i18n="history_space_note">Każdy wpis to pełna kopia bazy, więc większy limit zajmuje więcej miejsca na dysku.</span>
-    <label for="hsize" data-i18n="history_size_label">Limit rozmiaru historii (MB, 0 = bez limitu)</label>
-    <div class="row2"><input type="number" id="hsize" min="0" max="1000000" value="0"></div>
-    <span style="opacity:.65;font-size:12px" data-i18n="history_size_note">Opcjonalny. Anchor sesji nie liczy się do limitu.</span>
-    <label for="bkeep" data-i18n="bak_keep_label">Limit plików .bak (0 = bez limitu)</label>
-    <div class="row2"><input type="number" id="bkeep" min="0" max="10" value="10"></div>
-    <span style="opacity:.65;font-size:12px" data-i18n="bak_keep_note">Opcjonalny. Zostawia N najnowszych .bak; pierwszy .bak sesji jest chroniony.</span>
-    <button id="hclear" class="danger" data-i18n="hclear">🗑 Wyczyść historię</button>
-    <div id="hmaxmsg"></div>
+  <div class="settings-grid">
+    <div class="settings-col">
+      <section class="settings-sec">
+        <b class="secname" data-i18n="settings_program">Ustawienia programu</b>
+        <div class="dbsub" id="dbsum"></div>
+        <div class="dbsub" id="datadir" style="color:inherit;opacity:.6"></div>
+        <button id="datadirpick" data-i18n="data_dir_change">Zmień folder danych…</button>
+        <div id="datadirmsg" class="dstat"></div>
+        <label for="theme" data-i18n="theme_label">Motyw</label>
+        <select id="theme">
+          <option value="auto" data-i18n="theme_auto">Auto (system)</option>
+          <option value="light" data-i18n="theme_light">Jasny</option>
+          <option value="dark" data-i18n="theme_dark">Ciemny</option>
+        </select>
+        <span class="dstat" data-i18n="theme_note">Auto bierze motyw systemu (.deb) lub przeglądarki.</span>
+        <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
+        <div id="status"></div>
+        <div id="jobwrap"><div id="jobbar"></div></div>
+        <div id="jobmsg" class="dstat"></div>
+        <button id="reload" data-i18n="reload">⟳ Odśwież z oryginału (odrzuca zmiany)</button>
+        <label><input type="checkbox" id="bk" checked> <span data-i18n="backup_label">kopia zapasowa oryginału przed Upload</span><br>
+          <span style="opacity:.65;font-size:12px" data-i18n="backup_note">(jellyfin.db-DATA_godzina.bak w folderze bazy)</span></label>
+      </section>
+      <section class="settings-sec">
+        <b class="secname" data-i18n="settings_files">Baza i pliki</b>
+        <button id="openpath" data-i18n="open_path">📂 Wczytaj bazę z innej ścieżki…</button>
+        <button id="openfile" data-i18n="open_file">📁 Wczytaj plik bazy z komputera…</button>
+        <button id="pickfile" data-i18n="pick_file">🖥 Wybierz plik (okno systemowe)…</button>
+        <input type="file" id="filein" accept=".db,.sqlite,.sqlite3" tabindex="-1" style="position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0">
+        <button id="export" data-i18n="export_btn">⬇ Eksportuj kopię roboczą (.db)</button>
+        <span style="opacity:.65;font-size:12px" data-i18n="export_warn">Plik zawiera całą bazę, także konta i hashe haseł. Nie udostępniaj go.</span>
+      </section>
+    </div>
+    <div class="settings-col">
+      <section class="settings-sec">
+        <b class="secname" data-i18n="settings_history">Ustawienia historii</b>
+        <label for="hmax" data-i18n="history_max_label">Maksymalna liczba zapisanych baz</label>
+        <div class="row2"><input type="number" id="hmax" min="1" max="50" value="5"><button id="hmaxsave" data-i18n="port_save">Zapisz</button></div>
+        <span style="opacity:.65;font-size:12px" data-i18n="history_max_note">Domyślnie 5. Każdy Upload zapisuje kopię bazy w folderze history.</span>
+        <span style="opacity:.65;font-size:12px" data-i18n="history_space_note">Każdy wpis to pełna kopia bazy, więc większy limit zajmuje więcej miejsca na dysku.</span>
+        <label for="hsize" data-i18n="history_size_label">Limit rozmiaru historii (MB, 0 = bez limitu)</label>
+        <div class="row2"><input type="number" id="hsize" min="0" max="1000000" value="0"></div>
+        <span style="opacity:.65;font-size:12px" data-i18n="history_size_note">Opcjonalny. Anchor sesji nie liczy się do limitu.</span>
+        <label for="bkeep" data-i18n="bak_keep_label">Limit plików .bak (0 = bez limitu)</label>
+        <div class="row2"><input type="number" id="bkeep" min="0" max="10" value="10"></div>
+        <span style="opacity:.65;font-size:12px" data-i18n="bak_keep_note">Opcjonalny. Zostawia N najnowszych .bak; pierwszy .bak sesji jest chroniony.</span>
+        <span style="opacity:.65;font-size:12px" data-i18n="bak_auto_note">Pliki `.bak` w folderze Jellyfin są czyszczone automatycznie przy tworzeniu kolejnego `.bak` lub zapisie tego limitu; nie działa to w tle.</span>
+        <button id="hclear" class="danger" data-i18n="hclear">🗑 Wyczyść historię</button>
+        <div id="hmaxmsg"></div>
+      </section>
+      <section class="settings-sec">
+        <b class="secname" data-i18n="orph_section">Sieroty w tabelach powiązanych</b>
+        <div class="row2"><button id="orphcheck" data-i18n="orph_check">Sprawdź sieroty</button><button id="orphclean" class="danger" style="display:none" data-i18n="orph_clean">Wyczyść sieroty</button></div>
+        <div id="orphmsg" class="dstat"></div>
+      </section>
+      <section class="settings-sec">
+        <div class="row2"><b class="secname" data-i18n="disk_section">Dyski</b><button id="diskrefresh" data-i18n="disk_check">Sprawdź ponownie</button></div>
+        <div id="disks"></div>
+      </section>
+    </div>
   </div>
 </div></div>
 
@@ -299,6 +384,24 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
   <div id="bjobmsg" class="dstat" style="font-size:11px"></div>
   <div class="dstat" data-i18n="backup_manual_note" style="font-size:11px"></div>
   <div id="hmsg" class="dstat" style="min-height:1.1em"></div>
+</div></div>
+
+<div class="win" id="win_compare"><div class="winbox cmpbox">
+  <div class="winhead"><h3 data-i18n="menu_compare">Porównaj</h3><button class="x" data-win="win_compare" data-i18n-title="close" title="Zamknij">✕</button></div>
+  <label data-i18n="cmp_a_label">A — obecna baza</label>
+  <div id="cmpa" class="cmpsrc"></div>
+  <label for="cmpbpath" data-i18n="cmp_b_label">B — baza do porównania (.db / .bak)</label>
+  <div class="row2"><input type="text" id="cmpbpath" style="flex:1"><button id="cmpbpick" data-i18n="cmp_pick">Wybierz plik…</button></div>
+  <div id="cmpbakwrap" class="row2" style="display:none;align-items:center;gap:6px">
+    <span class="dstat" data-i18n="cmp_baks">…lub wybierz .bak z folderu bazy:</span>
+    <select id="cmpbak" style="flex:1"></select>
+  </div>
+  <label class="chk"><input type="checkbox" id="cmptechnical"> <span data-i18n="cmp_technical">Pokaż pola techniczne (DateLastSaved/DateLastRefreshed)</span></label>
+  <div class="row2"><button id="cmpgo" class="primary" data-i18n="cmp_go">Porównaj</button><span id="cmpmsg" class="cmpmsg"></span></div>
+  <div id="cmpbanner" class="cmpbanner" style="display:none"></div>
+  <div id="cmpsummary" class="cmpsummary"></div>
+  <div class="row2" id="cmpsearchrow" style="display:none"><input type="text" id="cmpq" data-i18n-ph="cmp_search" placeholder="Szukaj po nazwie, ścieżce lub ID…"><button id="cmpqclear" data-i18n-title="clear_search" title="Wyczyść wyszukiwanie">×</button></div>
+  <div id="cmplist"></div>
 </div></div>
 
 <div class="win" id="win_sql"><div class="winbox">
@@ -318,7 +421,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
     <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:2px 0">
     <div class="row2"><button id="svcstop" disabled data-i18n="svc_stop">⏹ Wyłącz</button><button id="svcstart" disabled data-i18n="svc_start">▶ Włącz</button></div>
     <label class="svcauto"><input type="checkbox" id="svcauto"> <span data-i18n="svc_auto_label">Automatycznie zatrzymuj i uruchamiaj Jellyfin</span></label>
-    <span class="dstat" style="font-size:11px" data-i18n="svc_auto_note">Bez potwierdzeń przy Uploadzie, przywracaniu i backupie oryginału.</span>
+    <span class="dstat svcautonote" style="font-size:11px" data-i18n="svc_auto_note">Bez potwierdzeń przy Uploadzie, przywracaniu i backupie oryginału.</span>
     <div class="row2"><button id="modebtn">🔒 LIMITED</button></div>
     <span id="privhint" style="display:none"></span>
   </div>
@@ -396,6 +499,15 @@ let LANG=localStorage.getItem('jfb_lang');
 if(!LANG||!LANGS.includes(LANG)){const nv=(navigator.language||'pl').slice(0,2).toLowerCase();LANG=LANGS.includes(nv)?nv:'pl'}
 const t=(k,kv)=>{const e=I18N[k]||{};let s=e[LANG]||e.pl||k;if(kv)for(const p in kv)s=s.split('{'+p+'}').join(kv[p]);return s};
 const $=s=>document.querySelector(s);
+function applyTheme(theme,save=true){
+  const th=(theme==='light'||theme==='dark')?theme:'auto';
+  const root=document.documentElement;
+  const sys=root.getAttribute('data-system-theme')||'';
+  root.setAttribute('data-theme',th);
+  root.style.colorScheme=th==='dark'?'dark':th==='light'?'light':(sys||'light dark');
+  const sel=$('#theme'); if(sel)sel.value=th;
+  if(save){try{localStorage.setItem('jfb_theme',th)}catch(e){}}
+}
 let sel=new Set(), rows=[], src='', view=null, lastInfo=null, nodbSkipped=false, listLimit=2000, listOffset=0, orphTotal=0, orphData=null, listClickTimer=null, editId=null;
 let jfLast=null, svcInfo=null, priv={mode:'limited'}, svcAutoBusy=false;
 let disksData=[], mountsData=[], diskSel=null;
@@ -464,6 +576,7 @@ async function setLang(l){
   LANG=l; localStorage.setItem('jfb_lang',l);
   $('#langnow').textContent=LANG.toUpperCase();
   applyI18n(); renderLangMenu(); renderNodbLangs(); renderTopMode();
+  if(window._cmpResult&&getComputedStyle($('#win_compare')).display==='flex')renderCompare(window._cmpResult);
   if(lastInfo) showNoDb(lastInfo);
   renderMode(); updateTop(); if(jfLast) renderJf(jfLast);
   await refreshStatus();
@@ -483,6 +596,7 @@ $('#m_settings').onclick=()=>{openWin('#win_settings');loadSettingsForm();if(las
 $('#m_conn').onclick=()=>{openWin('#win_conn');if(lastInfo&&!lastInfo.nodb)refreshDisks(true)};
 $('#m_history').onclick=()=>openHistory();
 $('#m_sql').onclick=()=>{openWin('#win_sqlio');$('#sqlmsg').textContent=''};
+$('#m_compare').onclick=()=>openCompare();
 
 // ---- import / eksport SQL ----
 let sqlPoll=null;
@@ -792,6 +906,20 @@ const post=async(u,body)=>{let r,t={};
 async function refreshStatus(){
   const i=await j('/api/info'); lastInfo=i;
   if($('#svcauto')&&!svcAutoBusy) $('#svcauto').checked=!!i.service_auto;
+  if(!window._bakNoticeShown&&(i.bak_removed||i.bak_failed)){
+    window._bakNoticeShown=true;
+    const parts=[];
+    if(i.bak_removed)parts.push(t('bak_removed',{n:i.bak_removed}));
+    if(i.bak_failed)parts.push(t('bak_remove_failed',{n:i.bak_failed}));
+    showHint(parts.join(' '),12000);
+  }
+  if(i.bak_prompt&&i.bak_prompt.count&&i.bak_prompt.limit){
+    const key=(i.bak_prompt.src||'')+'|'+i.bak_prompt.count+'|'+i.bak_prompt.limit;
+    if(window._bakPromptKey!==key){
+      window._bakPromptKey=key;
+      offerBakCleanup(i.bak_prompt);
+    }
+  }
   if(i.loading){ $('#nodb').style.display='none'; $('#status').textContent=t('loading_db'); $('#meta').textContent=t('loading_db'); return i; }
   applyDialog(i.dialog!==false);
   showNoDb(i); const up=i.kind==='upload';
@@ -904,12 +1032,17 @@ async function saveSettings(){
   const sz=parseInt($('#hsize').value,10)||0;
   const bk=parseInt($('#bkeep').value,10)||0;
   const {ok,t:r}=await post('/api/settings',{history_max:n,history_max_size_mb:sz,bak_keep:bk});
-  const m=$('#hmaxmsg'); m.className=ok?'ok':'miss';
-  m.textContent=ok?t('saved_ok'):(r.error||'error');
+  const m=$('#hmaxmsg'); m.className=ok?(r.bak_failed?'warn':'ok'):'miss';
   if(ok){
+    let msg=t('saved_ok');
+    if(r.bak_removed)msg+=' '+t('bak_removed',{n:r.bak_removed});
+    if(r.bak_failed)msg+=' '+t('bak_remove_failed',{n:r.bak_failed});
+    m.textContent=msg;
     $('#hmax').value=r.history_max;
     $('#hsize').value=r.history_max_size_mb;
     $('#bkeep').value=r.bak_keep;
+  }else{
+    m.textContent=r.error||'error';
   }
 }
 $('#hmaxsave').onclick=saveSettings;
@@ -1133,6 +1266,168 @@ async function loadHistoryDetail(id,body){
     }
     if(!rem.length&&!add.length&&!ed.length) body.append(el('div','hsub','—'));
   }catch(e){ body.textContent=t('history_err',{err:e.message||e}); }
+}
+
+// ---- porównanie dwóch baz (Compare) ----
+async function openCompare(){
+  openWin('#win_compare');
+  window._cmpResult=null; window._cmpFilter='all'; window._cmpQ='';
+  $('#cmpmsg').textContent=''; $('#cmpmsg').className='cmpmsg';
+  $('#cmpbanner').style.display='none';
+  $('#cmpsummary').innerHTML=''; $('#cmplist').innerHTML='';
+  $('#cmpsearchrow').style.display='none'; $('#cmpq').value='';
+  $('#cmptechnical').checked=false; $('#cmpbpath').value='';
+  $('#cmpa').textContent=(lastInfo&&lastInfo.src)||'';
+  if(!lastInfo||lastInfo.nodb){$('#cmpmsg').textContent=t('e_no_db');return}
+  try{
+    const o=await j('/api/compare');
+    $('#cmpa').textContent=(lastInfo.kind==='upload'?(lastInfo.label||lastInfo.src||''):(o.a||lastInfo.src||''));
+    const sel=$('#cmpbak'); sel.innerHTML='';
+    const none=el('option',null,t('cmp_no_bak')); none.value=''; sel.append(none);
+    (o.baks||[]).forEach(b=>{
+      const op=el('option',null,b.name+' · '+((b.size||0)/1048576).toFixed(1)+' MB');
+      op.value=b.path; sel.append(op);
+    });
+    $('#cmpbakwrap').style.display=(o.baks&&o.baks.length)?'flex':'none';
+    sel.onchange=()=>{if(sel.value)$('#cmpbpath').value=sel.value};
+  }catch(e){
+    $('#cmpmsg').className='cmpmsg miss';
+    $('#cmpmsg').textContent=t('cmp_error',{err:e.message||e});
+  }
+}
+$('#cmpbpick').onclick=async()=>{
+  const {ok,t:r}=await post('/api/pickpath',{});
+  if(ok&&r.path){$('#cmpbpath').value=r.path;return}
+  if(!ok&&r.error&&r.error!==t('e_pick_cancelled'))alert(r.error);
+};
+$('#cmptechnical').onchange=()=>{
+  if(window._cmpResult&&$('#cmpbpath').value.trim())runCompare();
+};
+$('#cmpbpath').onkeydown=e=>{if(e.key==='Enter')runCompare()};
+$('#cmpgo').onclick=()=>runCompare();
+$('#cmpq').oninput=()=>{window._cmpQ=$('#cmpq').value.trim().toLowerCase();renderCompareList()};
+$('#cmpqclear').onclick=()=>{$('#cmpq').value='';window._cmpQ='';renderCompareList()};
+async function runCompare(){
+  const path=$('#cmpbpath').value.trim();
+  if(!path){$('#cmpmsg').className='cmpmsg miss';$('#cmpmsg').textContent=t('cmp_need_b');return}
+  $('#cmpmsg').className='cmpmsg';$('#cmpmsg').textContent=t('loading');
+  $('#cmpgo').disabled=true;
+  try{
+    const r=await postAdmin('/api/compare',{path,include_technical:$('#cmptechnical').checked},t('cmp_read_admin'));
+    if(!r.ok){
+      $('#cmpmsg').className='cmpmsg miss';
+      $('#cmpmsg').textContent=t('cmp_error',{err:(r.t&&r.t.error)||'error'});
+      return;
+    }
+    window._cmpResult=r.t; window._cmpFilter='all'; window._cmpQ='';
+    $('#cmpq').value=''; $('#cmpmsg').textContent='';
+    $('#cmpsearchrow').style.display='flex';
+    renderCompare(r.t);
+  }catch(e){
+    $('#cmpmsg').className='cmpmsg miss';
+    $('#cmpmsg').textContent=t('cmp_error',{err:e.message||e});
+  }finally{$('#cmpgo').disabled=false}
+}
+function renderCompare(r){
+  window._cmpResult=r;
+  const inst=r.instance||{}, counts=r.counts||{};
+  const banner=$('#cmpbanner'); banner.style.display='flex';
+  banner.className='cmpbanner '+(inst.verdict||'unknown');
+  banner.innerHTML='';
+  let title=t('cmp_unknown');
+  if(inst.verdict==='same')title=inst.reason==='device'?t('cmp_same_device'):t('cmp_same_ids');
+  else if(inst.verdict==='different')title=inst.reason==='device'?t('cmp_diff_device'):t('cmp_diff_ids');
+  banner.append(el('b',null,t('cmp_instance')+': '+title));
+  const normPath=p=>(p||'').replace(/\\/g,'/').toLowerCase();
+  if(r.a&&r.b&&normPath(r.a.path)===normPath(r.b.path))banner.append(el('div','cmpnote',t('cmp_same_file')));
+  banner.append(el('div','cmpnote',t('cmp_stats',{a:inst.items_a||0,b:inst.items_b||0,common:inst.common_items||0,
+    ua:inst.users_a||0,ub:inst.users_b||0,uc:inst.common_users||0})));
+  if(r.schema&&r.schema.mismatch)banner.append(el('div','cmpnote',t('cmp_schema_warn')));
+  banner.append(el('div','cmpnote',t('cmp_instance_note')));
+  const sum=$('#cmpsummary'); sum.innerHTML='';
+  const filters=[
+    ['all',t('cmp_all')+' · '+((counts.added||0)+(counts.removed||0)+(counts.changed||0)),null],
+    ['added','+'+(counts.added||0)+' '+t('cmp_added'),'add'],
+    ['removed','−'+(counts.removed||0)+' '+t('cmp_removed'),'rem'],
+    ['changed','~'+(counts.changed||0)+' '+t('cmp_changed'),'chg']
+  ];
+  filters.forEach(([key,label,cls])=>{
+    const b=el('button','cmpcount'+(cls?' '+cls:'')+(window._cmpFilter===key?' on':''),label);
+    b.onclick=()=>{window._cmpFilter=key;renderCompare(r)};
+    sum.append(b);
+  });
+  sum.append(el('span','dstat',t('cmp_unchanged')+': '+(counts.unchanged||0)));
+  renderCompareList();
+}
+function renderCompareList(){
+  const r=window._cmpResult; if(!r)return;
+  const box=$('#cmplist'); box.innerHTML='';
+  const q=window._cmpQ||'';
+  const have=x=>!q||[x.id,x.name,x.type,x.path].some(v=>(v||'').toLowerCase().includes(q));
+  const add=(r.added||[]).map(x=>Object.assign({},x,{_kind:'added'}));
+  const rem=(r.removed||[]).map(x=>Object.assign({},x,{_kind:'removed'}));
+  const chg=(r.changed||[]).map(x=>Object.assign({},x,{_kind:'changed'}));
+  let rows=[];
+  if(window._cmpFilter==='all'||window._cmpFilter==='removed')rows=rows.concat(rem);
+  if(window._cmpFilter==='all'||window._cmpFilter==='changed')rows=rows.concat(chg);
+  if(window._cmpFilter==='all'||window._cmpFilter==='added')rows=rows.concat(add);
+  rows=rows.filter(have);
+  if(!rows.length){box.append(el('div','empty',t('cmp_empty')))}
+  rows.forEach(x=>box.append(renderCompareItem(x)));
+  ['added','removed','changed'].forEach(k=>{
+    if(r.truncated&&r.truncated[k]){
+      box.append(el('div','cmpnote',t('cmp_truncated',{n:(r[k]||[]).length,total:(r.counts||{})[k]||0})));
+    }
+  });
+}
+function renderDiff(box,text){
+  (text||'').split('\n').forEach(line=>{
+    let cls='';
+    if(line.startsWith('+++')||line.startsWith('---')||line.startsWith('@@'))cls='hunk';
+    else if(line.startsWith('+'))cls='add';
+    else if(line.startsWith('-'))cls='del';
+    box.append(el('div',cls,line||' '));
+  });
+}
+function renderCompareItem(item){
+  const kind=item._kind;
+  const row=el('div','cmprow '+kind);
+  const head=el('div','cmphead');
+  head.append(el('span','cmpsign',kind==='added'?'+':kind==='removed'?'−':'~'));
+  head.append(el('span','cmpname',item.name||item.id));
+  if(item.type)head.append(el('span','cmptype',item.type));
+  if(item.path)head.append(el('span','cmppath',item.path));
+  head.append(el('span','cmpid',item.id));
+  head.append(el('span','hchev','▸'));
+  const body=el('div','cmpbody');
+  if(kind==='changed'){
+    body.append(el('div','hsub',t('cmp_fields')+' ('+(item.fields||[]).length+')'));
+    (item.fields||[]).forEach(f=>{
+      const fbox=el('div','cmpfield');
+      fbox.append(el('div','cmpfname',f.name));
+      const vals=el('div','cmpvals');
+      vals.append(el('div','cmpval a'+(f.a_null?' null':''),f.a_null?'NULL':f.a));
+      vals.append(el('div','cmpval b'+(f.b_null?' null':''),f.b_null?'NULL':f.b));
+      fbox.append(vals);
+      if(f.diff){const pre=el('div','cmpdiff');renderDiff(pre,f.diff);fbox.append(pre)}
+      body.append(fbox);
+    });
+    if(!(item.fields||[]).length)body.append(el('div','hsub','—'));
+  }else{
+    (item.fields||[]).forEach(f=>{
+      const fbox=el('div','cmpfield');
+      fbox.append(el('div','cmpfname',f.name));
+      fbox.append(el('div','cmpval'+(f.null?' null':''),f.null?'NULL':f.value));
+      body.append(fbox);
+    });
+    if(!(item.fields||[]).length)body.append(el('div','hsub','—'));
+  }
+  head.onclick=()=>{
+    const open=body.classList.toggle('open');
+    head.querySelector('.hchev').textContent=open?'▾':'▸';
+  };
+  row.append(head,body);
+  return row;
 }
 
 async function revertSource(rec, isBackup){
@@ -1557,6 +1852,28 @@ function askModal(o){return new Promise(res=>{
   $('#amodal').style.display='flex';
 })}
 function closeAsk(v){$('#amodal').style.display='none';const r=aResolve;aResolve=null;if(r)r(v)}
+async function offerBakCleanup(p){
+  const yes=await askModal({
+    title:t('bak_prompt_title'),
+    text:t('bak_prompt_text',{count:p.count,limit:p.limit}),
+    buttons:[{label:t('bak_prompt_no'),value:false},{label:t('bak_prompt_yes'),value:true,primary:true}]
+  });
+  if(!yes){
+    try{await post('/api/bak',{action:'dismiss'})}catch(e){}
+    return;
+  }
+  const r=await postAdmin('/api/bak',{action:'cleanup'},t('e_remove_admin'));
+  if(!r.ok){
+    if(r.t&&r.t.need_admin){try{await post('/api/bak',{action:'dismiss'})}catch(e){}}
+    else alert((r.t&&r.t.error)||'error');
+    return;
+  }
+  const parts=[];
+  if(r.t.removed)parts.push(t('bak_removed',{n:r.t.removed}));
+  if(r.t.failed)parts.push(t('bak_remove_failed',{n:r.t.failed}));
+  if(parts.length)showHint(parts.join(' '),12000);
+  refreshStatus();
+}
 async function doService(action){
   if(action==='start') showHint(t('hint_starting'));
   if($('#svcstat')){ $('#svcstat').className=''; $('#svcstat').textContent=action==='stop'?t('svc_stopping'):t('svc_starting'); }
@@ -1657,10 +1974,19 @@ applyI18n();
 $('#langnow').textContent=LANG.toUpperCase();
 renderLangMenu();
 renderNodbLangs();
+applyTheme(document.documentElement.getAttribute('data-theme')||'auto',false);
+$('#theme').onchange=()=>applyTheme($('#theme').value);
+function setBootProgress(pct){
+  const p=Math.max(0,Math.min(100,Math.round(pct)));
+  const pctEl=$('#bootpct'); if(pctEl)pctEl.textContent=p+'%';
+  const fill=$('#bootbarfill'); if(fill)fill.style.width=p+'%';
+  const bar=document.querySelector('.bootbar'); if(bar)bar.setAttribute('aria-valuenow',String(p));
+}
 async function waitForDb(){
   $('#nodb').style.display='none';
   const base=t('loading_db');
   $('#meta').textContent=base;
+  setBootProgress(0);
   while(true){
     await new Promise(r=>setTimeout(r,500));
     let i={};
@@ -1669,10 +1995,16 @@ async function waitForDb(){
     let pct=null;
     try{
       const jb=await j('/api/job');
-      if(jb&&jb.total) pct=Math.round((jb.done||0)/jb.total*100);
+      if(jb&&jb.total){
+        const ratio=Math.max(0,Math.min(1,(jb.done||0)/jb.total));
+        if(jb.phase==='copy') pct=ratio*70;
+        else if(jb.phase==='work') pct=70+ratio*30;
+        else pct=ratio*100;
+        setBootProgress(pct);
+      }
     }catch(e){}
-    $('#meta').textContent=base+(pct!=null?(' '+pct+'%'):'');
-    if(!i.loading) return i;
+    $('#meta').textContent=base+(pct!=null?(' '+Math.round(pct)+'%'):'');
+    if(!i.loading){ setBootProgress(100); return i; }
   }
 }
 function applyDialog(d){
@@ -1686,7 +2018,17 @@ setInterval(()=>{
   }
 },15000);
 
+const bootStarted=Date.now();
+let bootLoadingDone=false;
+function finishBootLoading(){
+  if(bootLoadingDone)return;
+  bootLoadingDone=true;
+  setBootProgress(100);
+  const left=Math.max(0,500-(Date.now()-bootStarted));
+  setTimeout(()=>{const b=$('#bootloading');if(b)b.classList.add('done')},left);
+}
 async function boot(){
+  try{
   let s={setup:false};
   try{ s=await j('/api/setup'); }catch(e){}
   applyDialog(s.dialog!==false);
@@ -1709,6 +2051,7 @@ async function boot(){
   i=await refreshStatus();
   if(!i.nodb){await loadTypes();await loadList();refreshDisks()}
   refreshJf(false);refreshSvc();refreshPriv();setInterval(refreshPriv,30000);
+  } finally { finishBootLoading(); }
 }
 $('#m_setup').onclick=async()=>{
   try{

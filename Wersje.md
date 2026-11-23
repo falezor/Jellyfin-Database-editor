@@ -5,6 +5,18 @@ Każda wersja ma tag `vX.Y.Z` oraz release GitHub z ZIP-em; tagi są niezmienne,
 ZIP release zawiera program, UI, README/licencję i changelogi — bez `DB/`, `potencjalne poprawki` i danych runtime.
 English version: [`Versions.md`](Versions.md).
 
+## 1.0.x
+
+### 1.0.0 (2026-11-23)
+- **Kamień milowy 1.0 — funkcjonalnie kompletne:** brak nowych funkcji użytkownika względem 0.10.0; to wydanie jakościowo-wersjonowe dla stabilnej linii.
+- **Porównywanie baz:** nowe okno **Porównaj** porównuje obecną bazę z `.bak` lub innym `.db`. Pokazuje `+` wpisy tylko w B, `−` tylko w A i `~` zmienione, z różnicami pól (stara/nowa wartość) i diffem JSON dla `Data`; baner ostrzega o innej instancji Jellyfina.
+- **Zarządzanie `.bak`:** konfigurowalny limit, prompt przy starcie po przekroczeniu, usuwanie z ADMIN/sudo i raport usuniętych/nieusuniętych plików.
+- **UI i pakowanie:** motyw Auto/Jasny/Ciemny, stały wskaźnik ładowania, dwukolumnowe Ustawienia, zawijanie w Połączeniu, ciemne tło startowe i natywne okno z minimum 800×600.
+- **Audyt portów:** launcher desktopowy bierze losowy wolny port na `127.0.0.1`; bezpośredni `--no-browser` używa 8099 z fallbackiem 8100–8108. Nie zajmuje portów Jellyfina 8096/8920 i nie koliduje z typowymi portami Sonarr/Radarr/Prowlarr, SMB, Cockpit i NFS.
+- **Ekstensywne testy `.deb`:** walidacja pakietu, instalacja/reinstall/upgrade/remove/purge, CLI/launcher, API, Compare/`.bak`, GUI/WebKit pod Xvfb, bezpieczeństwo/uprawnienia, współbieżność i wydajność.
+- Testy: **50/50** źródłowe; suite `.deb` **136 testów** (134 pass, 2 skip), install/CLI **134 pass/0 fail**; release `v1.0.0` z ZIP-em i `.deb`.
+- Aktualizacja dokumentacji: powyższe zmiany.
+
 ## 0.9.x
 
 ### 0.9.0 (2026-11-20)

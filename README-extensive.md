@@ -1,7 +1,7 @@
 # Jellyfin DB editor — functional documentation
 
-**Version:** 0.9.0 (2026-11-20)  
-This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
+**Version:** 1.0.0 (2026-11-23)  
+This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish source: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
 
 ---
 
@@ -209,6 +209,10 @@ Each manual backup has a **Restore** button that replaces the original database 
 - import `.sql` and `.sql.gz` (streamed, with progress),
 - export `.sql` and `.sql.gz`,
 - manual SQL script window with Copy and Download buttons.
+
+### Compare
+
+The **Compare** window (between SQL and Languages) diffs the current database against a `.bak` or another `.db`. It shows `+` items only in B, `−` items only in A, and `~` changed items; click a row to see field-level old/new values and a JSON diff for `Data`. A banner checks whether both files come from the same Jellyfin instance using `data/device.txt` and shared item/user GUIDs. **Show technical fields** includes `DateLastSaved`/`DateLastRefreshed` and re-runs the comparison immediately.
 
 ### “Database not loaded” screen
 
@@ -439,8 +443,8 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **0.9.0**.
-- Version scheme: `X` - main line / major change, `Y` - new features, `Z` - bugfixes or very small changes. The public main line uses **0.x.x**. The next feature release is `0.10.0`; the next fix for this line is `0.9.1`.
+- Current version: **1.0.0**.
+- Version scheme: `X` - main line / major change, `Y` - new features, `Z` - bugfixes or very small changes. The public main line uses **1.0.x** from 1.0.0; earlier 0.x.x and historical 1.x development releases remain in [`Versions.md`](Versions.md). The current release is `1.0.0`.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
 - Build a release archive with `python scripts/build_release.py vX.Y.Z`.

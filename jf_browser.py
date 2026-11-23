@@ -24,11 +24,13 @@ Platformy:
     sterowanie usługą systemd jest niedostępne.
 """
 import argparse
+import difflib
 import http.client
 import ipaddress
 import json
 import gzip
 import hashlib
+import math
 import mimetypes
 import os
 import queue
@@ -49,7 +51,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-APP_VERSION = '0.9.0'
+APP_VERSION = '1.0.0'
 
 IMG_TYPES = {0: 'Primary', 1: 'Art', 2: 'Backdrop', 3: 'Banner', 4: 'Logo', 5: 'Thumb',
              6: 'Disc', 7: 'Box', 8: 'Screenshot', 9: 'Menu', 10: 'Chapter',
@@ -64,7 +66,7 @@ STATE = {'con': None, 'tmp': None, 'src': None, 'orig': None, 'work': None,
          'kind': 'path', 'label': None, 'nodb_reason': None, 'unreadable': 0, 'deleted': [], 'edited': [], 'loading': False,
          'setup': False, 'sqljob': None, 'job': None, 'dialog': True,
          'session_id': secrets.token_hex(8), 'anchor_id': None, 'session_bak': None,
-         'nodb_reason_key': None, 'nodb_reason_args': {}}
+         'bak_cleanup': None, 'bak_prompt': None, 'nodb_reason_key': None, 'nodb_reason_args': {}}
 CFG = {'service_check': True, 'token': secrets.token_hex(16)}
 
 
@@ -2278,6 +2280,7 @@ def api_upload(do_backup, ver='', force_schema=False):
             install_file(tb, backup, st)
             STATE['session_bak'] = backup
             prune_bak_files(src)
+            STATE['bak_prompt'] = bak_prompt_state(src)
 
         tn = os.path.join(scratch, 'new.db')
         with LOCK:
@@ -2465,6 +2468,354 @@ def db_rows(path, ids):
     return out
 
 
+COMPARE_MAX_CHANGES = 1000
+COMPARE_IGNORE_COLUMNS = {'DateLastSaved', 'DateLastRefreshed'}
+_COMPARE_DEVICE_RE = re.compile(r'^[0-9a-fA-F-]{32,36}$')
+
+
+def _cmp_ident(name):
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _cmp_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, bytes):
+        return value.decode('utf-8', 'replace')
+    return str(value)
+
+
+def _cmp_table_columns(con, table='BaseItems'):
+    try:
+        return [r[1] for r in con.execute(f'PRAGMA table_info({_cmp_ident(table)})')]
+    except sqlite3.Error:
+        return []
+
+
+def _cmp_table_ids(con, table):
+    try:
+        return {r[0] for r in con.execute(f'SELECT Id FROM {_cmp_ident(table)}')}
+    except (sqlite3.Error, TypeError):
+        return set()
+
+
+def _cmp_last_migrations(con):
+    try:
+        rows = [r[0] for r in con.execute('SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId')]
+        return rows[-3:]
+    except sqlite3.Error:
+        return []
+
+
+def _cmp_device_id(db_path):
+    """Jellyfin trzyma ID instancji w data/device.txt, nie w jellyfin.db."""
+    if not db_path:
+        return None
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(db_path)), 'device.txt')
+        with open(path, encoding='utf-8', errors='replace') as f:
+            value = f.read().strip()
+    except OSError:
+        return None
+    return value.lower() if _COMPARE_DEVICE_RE.fullmatch(value) else None
+
+
+def _cmp_normalize(column, value):
+    if value is None:
+        return None
+    if column == 'Data' and isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ''
+        try:
+            obj = json.loads(text)
+        except (TypeError, ValueError):
+            return value
+        try:
+            return 'json:' + json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        except (TypeError, ValueError):
+            return value
+    if isinstance(value, bytes):
+        return 'bytes:' + value.hex()
+    if isinstance(value, float):
+        if math.isnan(value):
+            return 'nan'
+        if math.isinf(value):
+            return 'inf' if value > 0 else '-inf'
+    return value
+
+
+def _cmp_display(value, limit=20000):
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        text = value.hex()
+    elif isinstance(value, float):
+        if math.isnan(value):
+            text = 'NaN'
+        elif math.isinf(value):
+            text = 'Infinity' if value > 0 else '-Infinity'
+        else:
+            text = str(value)
+    else:
+        text = str(value)
+    if len(text) > limit:
+        return text[:limit] + '…'
+    return text
+
+
+def _cmp_hash(values):
+    h = hashlib.sha1()
+    for value in values:
+        h.update(repr(value).encode('utf-8', 'replace'))
+        h.update(b'\x1f')
+    return h.digest()
+
+
+def _cmp_rows(con, columns):
+    """Id -> hash + lekkie pola opisowe; pełne wiersze pobieramy tylko dla różnic."""
+    select = ', '.join(_cmp_ident(c) for c in columns)
+    pos = {c: i for i, c in enumerate(columns)}
+    compare_cols = [c for c in columns if c != 'Id']
+    out = {}
+    for row in con.execute(f'SELECT {select} FROM BaseItems'):
+        rid = row[pos['Id']]
+        values = [_cmp_normalize(c, row[pos[c]]) for c in compare_cols]
+        out[rid] = {
+            'hash': _cmp_hash(values),
+            'name': _cmp_text(row[pos['Name']]) if 'Name' in pos else '',
+            'type': short(_cmp_text(row[pos['Type']])) if 'Type' in pos else '',
+            'path': _cmp_text(row[pos['Path']]) if 'Path' in pos else '',
+        }
+    return out
+
+
+def _cmp_fetch(con, columns, ids):
+    if not ids or not columns:
+        return {}
+    select = ', '.join(_cmp_ident(c) for c in columns)
+    out = {}
+    ids = list(ids)
+    for start in range(0, len(ids), 400):
+        part = ids[start:start + 400]
+        marks = ','.join('?' * len(part))
+        for row in con.execute(f'SELECT {select} FROM BaseItems WHERE Id IN ({marks})', part):
+            out[row[0]] = {c: row[i] for i, c in enumerate(columns)}
+    return out
+
+
+def _cmp_json_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', 'replace')
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return ''
+        try:
+            obj = json.loads(text)
+        except (TypeError, ValueError):
+            return value
+        try:
+            return json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2)
+        except (TypeError, ValueError):
+            return value
+    return str(value)
+
+
+def _cmp_diff_text(a, b, limit=60000):
+    left = _cmp_json_text(a).splitlines()
+    right = _cmp_json_text(b).splitlines()
+    text = '\n'.join(difflib.unified_diff(left, right, fromfile='A', tofile='B', lineterm=''))
+    if len(text) > limit:
+        return text[:limit] + '\n… [diff truncated]'
+    return text
+
+
+def _cmp_key_fields(row, columns):
+    out = []
+    for name in ('Name', 'Type', 'Path', 'ParentId', 'SeriesId', 'SeasonId', 'IndexNumber', 'ProductionYear'):
+        if name not in columns or name == 'Id':
+            continue
+        value = row.get(name)
+        if name == 'Type':
+            value = short(_cmp_text(value))
+        out.append({'name': name, 'value': _cmp_display(value), 'null': value is None})
+    return out
+
+
+def _cmp_schema(con, columns):
+    try:
+        user_version = con.execute('PRAGMA user_version').fetchone()[0]
+    except (sqlite3.Error, TypeError):
+        user_version = None
+    return {'column_count': len(columns), 'migrations': _cmp_last_migrations(con),
+            'user_version': user_version}
+
+
+def _cmp_instance(a_origin, b_path, a_ids, b_ids, a_users, b_users):
+    dev_a = _cmp_device_id(a_origin)
+    dev_b = _cmp_device_id(b_path)
+    common_items = len(a_ids & b_ids)
+    common_users = len(a_users & b_users)
+    item_ratio = common_items / min(len(a_ids), len(b_ids)) if a_ids and b_ids else None
+    user_ratio = common_users / min(len(a_users), len(b_users)) if a_users and b_users else None
+    if dev_a and dev_b and dev_a != dev_b:
+        verdict, reason = 'different', 'device'
+    elif dev_a and dev_b:
+        if a_ids and b_ids and common_items == 0:
+            verdict, reason = 'different', 'ids'
+        else:
+            verdict, reason = 'same', 'device'
+    elif a_ids and b_ids:
+        if item_ratio >= 0.5:
+            verdict, reason = 'same', 'ids'
+        elif item_ratio == 0:
+            verdict, reason = 'different', 'ids'
+        else:
+            verdict, reason = 'unknown', 'partial'
+    elif a_users and b_users:
+        if user_ratio >= 0.5:
+            verdict, reason = 'same', 'users'
+        elif user_ratio == 0:
+            verdict, reason = 'different', 'users'
+        else:
+            verdict, reason = 'unknown', 'partial'
+    else:
+        verdict, reason = 'unknown', 'insufficient'
+    return {
+        'verdict': verdict,
+        'reason': reason,
+        'device_a': bool(dev_a),
+        'device_b': bool(dev_b),
+        'device_match': (dev_a == dev_b) if (dev_a and dev_b) else None,
+        'items_a': len(a_ids),
+        'items_b': len(b_ids),
+        'common_items': common_items,
+        'items_ratio': round(item_ratio, 4) if item_ratio is not None else None,
+        'users_a': len(a_users),
+        'users_b': len(b_users),
+        'common_users': common_users,
+        'users_ratio': round(user_ratio, 4) if user_ratio is not None else None,
+    }
+
+
+def compare_databases(a_path, b_path, a_origin=None, include_technical=False, max_changes=COMPARE_MAX_CHANGES):
+    """Porównuje BaseItems w dwóch bazach; tylko odczyt, B jest kopiowana do snapshotu."""
+    if not a_path:
+        raise ValueError(tr('e_no_db'))
+    if not b_path:
+        raise ValueError(tr('e_empty_path'))
+    max_changes = max(1, min(5000, int(max_changes or COMPARE_MAX_CHANGES)))
+    tmp = tempfile.mkdtemp(prefix='jfcmp_', dir=work_tmp())
+    b_snapshot = os.path.join(tmp, 'b.db')
+    con_a = con_b = None
+    try:
+        copy_db_files(b_path, b_snapshot)
+        con_a = ro_connect(a_path)
+        con_b = ro_connect(b_snapshot)
+        cols_a = _cmp_table_columns(con_a)
+        cols_b = _cmp_table_columns(con_b)
+        if not cols_a or not cols_b:
+            raise ValueError(tr('e_compare_no_table'))
+        if 'Id' not in cols_a or 'Id' not in cols_b:
+            raise ValueError(tr('e_compare_no_id'))
+        common = ['Id'] + [c for c in cols_a if c != 'Id' and c in cols_b]
+        compare_cols = [c for c in common if include_technical or c not in COMPARE_IGNORE_COLUMNS]
+        a_rows = _cmp_rows(con_a, compare_cols)
+        b_rows = _cmp_rows(con_b, compare_cols)
+        a_ids, b_ids = set(a_rows), set(b_rows)
+        common_ids = a_ids & b_ids
+        added_ids = b_ids - a_ids
+        removed_ids = a_ids - b_ids
+        changed_ids = {rid for rid in common_ids if a_rows[rid]['hash'] != b_rows[rid]['hash']}
+
+        def order(rid, rows):
+            row = rows[rid]
+            return (row['name'].casefold(), row['name'], rid)
+
+        added_order = sorted(added_ids, key=lambda rid: order(rid, b_rows))
+        removed_order = sorted(removed_ids, key=lambda rid: order(rid, a_rows))
+        changed_order = sorted(changed_ids, key=lambda rid: order(rid, a_rows))
+        added_show = added_order[:max_changes]
+        removed_show = removed_order[:max_changes]
+        changed_show = changed_order[:max_changes]
+        added_full = _cmp_fetch(con_b, compare_cols, added_show)
+        removed_full = _cmp_fetch(con_a, compare_cols, removed_show)
+        changed_a = _cmp_fetch(con_a, compare_cols, changed_show)
+        changed_b = _cmp_fetch(con_b, compare_cols, changed_show)
+
+        added = []
+        for rid in added_show:
+            row = added_full.get(rid, {})
+            meta = b_rows[rid]
+            added.append({'id': rid, 'name': meta['name'], 'type': meta['type'], 'path': meta['path'],
+                          'fields': _cmp_key_fields(row, compare_cols)})
+        removed = []
+        for rid in removed_show:
+            row = removed_full.get(rid, {})
+            meta = a_rows[rid]
+            removed.append({'id': rid, 'name': meta['name'], 'type': meta['type'], 'path': meta['path'],
+                            'fields': _cmp_key_fields(row, compare_cols)})
+        changed = []
+        for rid in changed_show:
+            row_a = changed_a.get(rid, {})
+            row_b = changed_b.get(rid, {})
+            fields = []
+            for name in compare_cols:
+                if name == 'Id':
+                    continue
+                value_a, value_b = row_a.get(name), row_b.get(name)
+                if _cmp_normalize(name, value_a) == _cmp_normalize(name, value_b):
+                    continue
+                field = {'name': name, 'a': _cmp_display(value_a), 'b': _cmp_display(value_b),
+                         'a_null': value_a is None, 'b_null': value_b is None}
+                if name == 'Data':
+                    field['diff'] = _cmp_diff_text(value_a, value_b)
+                fields.append(field)
+            type_a = short(_cmp_text(row_a.get('Type')))
+            type_b = short(_cmp_text(row_b.get('Type')))
+            name = _cmp_text(row_a.get('Name')) or _cmp_text(row_b.get('Name'))
+            path = _cmp_text(row_a.get('Path')) or _cmp_text(row_b.get('Path'))
+            changed.append({'id': rid, 'name': name,
+                            'type': type_a if type_a == type_b else f'{type_a} → {type_b}',
+                            'path': path, 'fields': fields})
+
+        a_users = _cmp_table_ids(con_a, 'Users')
+        b_users = _cmp_table_ids(con_b, 'Users')
+        schema_a = _cmp_schema(con_a, cols_a)
+        schema_b = _cmp_schema(con_b, cols_b)
+        only_a = [c for c in cols_a if c not in cols_b]
+        only_b = [c for c in cols_b if c not in cols_a]
+        migration_mismatch = schema_a['migrations'][-1:] != schema_b['migrations'][-1:]
+        unchanged = len(common_ids) - len(changed_ids)
+        return {
+            'ok': True,
+            'a': {'path': a_origin or a_path, 'items': len(a_ids), 'users': len(a_users)},
+            'b': {'path': os.path.abspath(b_path), 'items': len(b_ids), 'users': len(b_users)},
+            'instance': _cmp_instance(a_origin or a_path, b_path, a_ids, b_ids, a_users, b_users),
+            'schema': {'a': schema_a, 'b': schema_b, 'only_a': only_a, 'only_b': only_b,
+                       'mismatch': bool(only_a or only_b or migration_mismatch),
+                       'migration_mismatch': migration_mismatch},
+            'counts': {'added': len(added_ids), 'removed': len(removed_ids), 'changed': len(changed_ids),
+                       'unchanged': unchanged, 'items_a': len(a_ids), 'items_b': len(b_ids)},
+            'added': added,
+            'removed': removed,
+            'changed': changed,
+            'truncated': {'added': len(added_order) > max_changes,
+                          'removed': len(removed_order) > max_changes,
+                          'changed': len(changed_order) > max_changes},
+            'include_technical': bool(include_technical),
+        }
+    finally:
+        if con_a is not None:
+            con_a.close()
+        if con_b is not None:
+            con_b.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def work_ids():
     with LOCK:
         return {r[0] for r in STATE['con'].execute('SELECT Id FROM BaseItems')}
@@ -2567,34 +2918,51 @@ def bak_keep_limit():
     return max(0, min(10, n))
 
 
-def prune_bak_files(db_path):
-    """Opcjonalnie zostawia N najnowszych plików <baza>-*.bak; ręcznych kopii nie rusza."""
-    keep = bak_keep_limit()
-    if not keep or not db_path:
-        return 0
+def bak_files(db_path):
+    """Programowe kopie <baza>-*.bak jako (mtime, ścieżka), najnowsze pierwsze."""
+    if not db_path:
+        return []
     folder = os.path.dirname(os.path.abspath(db_path))
-    base = os.path.basename(db_path)
+    prefix = os.path.basename(db_path) + '-'
     try:
         names = os.listdir(folder)
     except OSError:
-        return 0
+        return []
     files = []
-    prefix = base + '-'
-    current = STATE.get('session_bak') or ''
-    current_key = os.path.normcase(os.path.abspath(current)) if current else ''
     for name in names:
         if not (name.startswith(prefix) and name.endswith('.bak')):
             continue
         path = os.path.join(folder, name)
-        if not os.path.isfile(path):
-            continue
         try:
-            files.append((os.path.getmtime(path), path))
+            if os.path.isfile(path):
+                files.append((os.path.getmtime(path), path))
         except OSError:
             pass
     files.sort(reverse=True)
+    return files
+
+
+def bak_prompt_state(db_path):
+    """Prompt przy starcie: .bak jest co najmniej dwukrotnie więcej niż limit."""
+    keep = bak_keep_limit()
+    if not keep or not db_path:
+        return None
+    files = bak_files(db_path)
+    if len(files) < keep * 2:
+        return None
+    return {'count': len(files), 'limit': keep, 'src': os.path.abspath(db_path)}
+
+
+def prune_bak_files(db_path, details=False):
+    """Opcjonalnie zostawia N najnowszych plików <baza>-*.bak; ręcznych kopii nie rusza."""
+    result = {'removed': 0, 'failed': 0}
+    keep = bak_keep_limit()
+    if not keep or not db_path:
+        return result if details else 0
+    files = bak_files(db_path)
+    current = STATE.get('session_bak') or ''
+    current_key = os.path.normcase(os.path.abspath(current)) if current else ''
     keep_others = max(0, keep - (1 if current and os.path.isfile(current) else 0))
-    removed = 0
     for _, path in files:
         if current_key and os.path.normcase(os.path.abspath(path)) == current_key:
             continue
@@ -2602,11 +2970,14 @@ def prune_bak_files(db_path):
             keep_others -= 1
             continue
         try:
-            os.remove(path)
-            removed += 1
-        except OSError:
-            pass
-    return removed
+            remove_file(path)
+            result['removed'] += 1
+        except NeedAdmin:
+            result['failed'] += 1
+            result['need_admin'] = True
+        except (OSError, RuntimeError):
+            result['failed'] += 1
+    return result if details else result['removed']
 
 
 def _is_within(child, parent):
@@ -2778,13 +3149,69 @@ def api_settings(body):
         persisted = save_settings()
         if 'history_max' in body or 'history_max_size_mb' in body:
             history_prune()
+        cleanup = {'removed': 0, 'failed': 0}
         if 'bak_keep' in body:
-            prune_bak_files(STATE.get('src'))
+            cleanup = prune_bak_files(STATE.get('src'), details=True)
+            STATE['bak_cleanup'] = cleanup
+            STATE['bak_prompt'] = None
         return {'ok': True, 'persisted': persisted, 'history_max': history_limit(),
-                'history_max_size_mb': history_max_size_mb(), 'bak_keep': bak_keep_limit()}
+                'history_max_size_mb': history_max_size_mb(), 'bak_keep': bak_keep_limit(),
+                'bak_removed': cleanup['removed'], 'bak_failed': cleanup['failed']}
     if 'data_dir' in body:
         return change_data_dir(str(body.get('data_dir') or ''), bool(body.get('force')))
     raise ValueError(tr('e_unknown_action'))
+
+
+def api_bak(body):
+    """Czyszczenie .bak na żądanie użytkownika (prompt przy starcie)."""
+    action = (body or {}).get('action')
+    if action == 'dismiss':
+        STATE['bak_prompt'] = None
+        return {'ok': True}
+    if action == 'cleanup':
+        cleanup = prune_bak_files(STATE.get('src'), details=True)
+        if cleanup.get('need_admin') and not (IS_ROOT or priv_alive()):
+            raise NeedAdmin(tr('e_remove_admin'))
+        STATE['bak_cleanup'] = cleanup
+        STATE['bak_prompt'] = None
+        return {'ok': True, 'removed': cleanup['removed'], 'failed': cleanup['failed']}
+    raise ValueError(tr('e_unknown_action'))
+
+
+def api_compare_options():
+    if STATE['con'] is None:
+        raise ValueError(tr('e_no_db'))
+    src = STATE.get('src') or ''
+    baks = []
+    for mtime, path in bak_files(src)[:50]:
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        baks.append({'path': path, 'name': os.path.basename(path), 'mtime': mtime, 'size': size})
+    return {'a': src, 'baks': baks}
+
+
+def api_compare(body):
+    if STATE['con'] is None:
+        raise ValueError(tr('e_no_db'))
+    body = body or {}
+    path = os.path.expanduser(str(body.get('path') or '').strip())
+    if not path:
+        raise ValueError(tr('e_empty_path'))
+    if foreign_path_style(path):
+        raise ValueError(tr('e_path_style'))
+    inf = fs_stat_many([path])[0]
+    if inf['e'] is False or (inf['e'] and inf['d']):
+        raise ValueError(tr('e_file_notfound', path=path))
+    try:
+        max_changes = int(body.get('max_changes') or COMPARE_MAX_CHANGES)
+    except (TypeError, ValueError):
+        max_changes = COMPARE_MAX_CHANGES
+    return compare_databases(STATE.get('orig'), os.path.abspath(path),
+                             a_origin=STATE.get('src'),
+                             include_technical=bool(body.get('include_technical')),
+                             max_changes=max_changes)
 
 
 def setup_state():
@@ -3464,7 +3891,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path not in ('/api/delete', '/api/upload', '/api/reload', '/api/open', '/api/load', '/api/jellyfin',
                               '/api/priv', '/api/service', '/api/pick', '/api/settings', '/api/history', '/api/revert',
                               '/api/setup', '/api/pickdir', '/api/import-sql', '/api/backup', '/api/backups', '/api/pickpath',
-                              '/api/export', '/api/export-sql', '/api/orphans', '/api/edit'):
+                              '/api/export', '/api/export-sql', '/api/orphans', '/api/edit', '/api/bak', '/api/compare'):
                 self.send_error(404)
                 return
             if u.path in ('/api/export', '/api/export-sql'):
@@ -3543,6 +3970,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(api_pick())
             elif u.path == '/api/settings':
                 self.send_json(api_settings(body))
+            elif u.path == '/api/bak':
+                self.send_json(api_bak(body))
+            elif u.path == '/api/compare':
+                self.send_json(api_compare(body))
             elif u.path == '/api/history':
                 self.send_json(api_history_post(body))
             elif u.path == '/api/revert':
@@ -3609,7 +4040,12 @@ class Handler(BaseHTTPRequestHandler):
                                                 if STATE.get('nodb_reason_key') else STATE['nodb_reason']),
                                 'loading': STATE.get('loading', False), 'setup': STATE.get('setup', False),
                                 'dialog': STATE.get('dialog', True),
-                                'service_auto': bool(SETTINGS.get('service_auto'))})
+                                'service_auto': bool(SETTINGS.get('service_auto')),
+                                'bak_removed': (STATE.get('bak_cleanup') or {}).get('removed', 0),
+                                'bak_failed': (STATE.get('bak_cleanup') or {}).get('failed', 0),
+                                'bak_prompt': STATE.get('bak_prompt')})
+            elif u.path == '/api/compare':
+                self.send_json(api_compare_options())
             elif u.path == '/api/setup':
                 self.send_json(setup_state())
             elif u.path == '/api/types':
@@ -3701,7 +4137,7 @@ try:
 except Exception:
     pass
 p = filedialog.askopenfilename(title='jellyfin.db',
-                               filetypes=[('SQLite / Jellyfin', '*.db'), ('*', '*')])
+                               filetypes=[('SQLite / Jellyfin', '*.db'), ('Jellyfin backup', '*.bak'), ('*', '*')])
 root.destroy()
 print(p or '')
 """
@@ -3803,9 +4239,19 @@ def open_ui(url):
 def startup_db(path):
     """Start bez wczytanej bazy jest dozwolony: interfejs pozwoli włączyć tryb ADMIN albo wskazać plik."""
     STATE['src'] = path
+    STATE['bak_prompt'] = None
     try:
         open_copy(path)
-        prune_bak_files(path)
+        STATE['bak_prompt'] = bak_prompt_state(path)
+        if STATE['bak_prompt']:
+            STATE['bak_cleanup'] = {'removed': 0, 'failed': 0}
+            print(f'Wykryto {STATE["bak_prompt"]["count"]} plikow .bak (limit {STATE["bak_prompt"]["limit"]}): '
+                  'czekam na decyzje uzytkownika.')
+        else:
+            cleanup = prune_bak_files(path, details=True)
+            STATE['bak_cleanup'] = cleanup
+            if cleanup.get('failed'):
+                print(f'Nie usunieto {cleanup["failed"]} starych .bak (brak uprawnien? wlacz ADMIN).')
     except (OSError, ValueError, RuntimeError, sqlite3.Error) as e:
         STATE['nodb_reason'] = str(e)
         STATE['nodb_reason_key'] = getattr(e, 'key', None) if isinstance(e, DbError) else None

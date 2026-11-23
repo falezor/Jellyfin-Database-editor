@@ -108,11 +108,13 @@ class BakRetentionTests(unittest.TestCase):
     def setUp(self):
         self.old_keep = j.SETTINGS.get('bak_keep')
         self.old_session = j.STATE.get('session_bak')
+        self.old_prompt = j.STATE.get('bak_prompt')
         self.tmp = tempfile.mkdtemp(prefix='jfbak_')
 
     def tearDown(self):
         j.SETTINGS['bak_keep'] = self.old_keep
         j.STATE['session_bak'] = self.old_session
+        j.STATE['bak_prompt'] = self.old_prompt
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_default_keep_is_ten(self):
@@ -140,6 +142,179 @@ class BakRetentionTests(unittest.TestCase):
         self.assertTrue(os.path.exists(current))
         self.assertTrue(os.path.exists(old2))
         self.assertFalse(os.path.exists(old1))
+
+    def test_details_report_removed_count(self):
+        db = os.path.join(self.tmp, 'jellyfin.db')
+        with open(db, 'wb') as f:
+            f.write(b'db')
+        current = os.path.join(self.tmp, 'jellyfin.db-2999-01-01_00-00-00.bak')
+        old = os.path.join(self.tmp, 'jellyfin.db-1999-01-01_00-00-00.bak')
+        for p in (current, old):
+            with open(p, 'wb') as f:
+                f.write(b'bak')
+        now = time.time()
+        os.utime(current, (now + 30, now + 30))
+        os.utime(old, (now, now))
+        j.STATE['session_bak'] = current
+        j.SETTINGS['bak_keep'] = 1
+        result = j.prune_bak_files(db, details=True)
+        self.assertEqual(result, {'removed': 1, 'failed': 0})
+        self.assertTrue(os.path.exists(current))
+        self.assertFalse(os.path.exists(old))
+
+    def test_bak_files_only_program_copies(self):
+        db = os.path.join(self.tmp, 'jellyfin.db')
+        with open(db, 'wb') as f:
+            f.write(b'db')
+        names = ('jellyfin.db-2020-01-01_00-00-00.bak', 'manual.bak', 'other.db-2020-01-01_00-00-00.bak',
+                 'jellyfin.db-2020-01-01_00-00-00.bak.jfb-tmp')
+        for n in names:
+            with open(os.path.join(self.tmp, n), 'wb') as f:
+                f.write(b'bak')
+        found = [os.path.basename(p) for _, p in j.bak_files(db)]
+        self.assertEqual(found, ['jellyfin.db-2020-01-01_00-00-00.bak'])
+
+    def test_prompt_only_above_twice_the_limit(self):
+        db = os.path.join(self.tmp, 'jellyfin.db')
+        with open(db, 'wb') as f:
+            f.write(b'db')
+        for i in range(3):
+            with open(os.path.join(self.tmp, f'jellyfin.db-2020-01-0{i + 1}_00-00-00.bak'), 'wb') as f:
+                f.write(b'bak')
+        j.SETTINGS['bak_keep'] = 2
+        self.assertIsNone(j.bak_prompt_state(db))
+        with open(os.path.join(self.tmp, 'jellyfin.db-2020-01-04_00-00-00.bak'), 'wb') as f:
+            f.write(b'bak')
+        prompt = j.bak_prompt_state(db)
+        self.assertEqual(prompt['count'], 4)
+        self.assertEqual(prompt['limit'], 2)
+        j.SETTINGS['bak_keep'] = 1
+        self.assertEqual(j.bak_prompt_state(db)['count'], 4)
+        j.SETTINGS['bak_keep'] = 0
+        self.assertIsNone(j.bak_prompt_state(db))
+
+    def test_details_flag_need_admin(self):
+        db = os.path.join(self.tmp, 'jellyfin.db')
+        with open(db, 'wb') as f:
+            f.write(b'db')
+        for i in range(2):
+            with open(os.path.join(self.tmp, f'jellyfin.db-2020-01-0{i + 1}_00-00-00.bak'), 'wb') as f:
+                f.write(b'bak')
+        j.STATE['session_bak'] = None
+        j.SETTINGS['bak_keep'] = 1
+        with mock.patch.object(j, 'remove_file', side_effect=j.NeedAdmin('x')):
+            result = j.prune_bak_files(db, details=True)
+        self.assertEqual(result['removed'], 0)
+        self.assertEqual(result['failed'], 1)
+        self.assertTrue(result['need_admin'])
+
+    def test_api_bak_cleanup_asks_for_admin(self):
+        j.STATE['bak_prompt'] = {'count': 21, 'limit': 10}
+        with mock.patch.object(j, 'IS_ROOT', False), \
+                mock.patch.object(j, 'priv_alive', return_value=False), \
+                mock.patch.object(j, 'prune_bak_files',
+                                  return_value={'removed': 0, 'failed': 1, 'need_admin': True}):
+            with self.assertRaises(j.NeedAdmin):
+                j.api_bak({'action': 'cleanup'})
+        self.assertEqual(j.api_bak({'action': 'dismiss'}), {'ok': True})
+        self.assertIsNone(j.STATE.get('bak_prompt'))
+
+
+class CompareTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='jfcmpunit_')
+        self.old_tmp_dir = j.TMP_DIR
+        j.TMP_DIR = os.path.join(self.tmp, 'work')
+        os.makedirs(j.TMP_DIR)
+
+    def tearDown(self):
+        j.TMP_DIR = self.old_tmp_dir
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def row(rid, name, data=None, saved='2026-01-01'):
+        return (rid, name, 'MediaBrowser.Controller.Entities.Movies.Movie',
+                f'/media/{rid}.mkv', None, 2020, data, saved)
+
+    def make_db(self, folder, rows, users=('u1', 'u2'), device=None):
+        base = os.path.join(self.tmp, folder)
+        os.makedirs(base)
+        path = os.path.join(base, 'jellyfin.db')
+        con = sqlite3.connect(path)
+        try:
+            con.execute('CREATE TABLE BaseItems (Id TEXT PRIMARY KEY, Name TEXT, Type TEXT, Path TEXT, '
+                        'ParentId TEXT, ProductionYear INTEGER, Data TEXT, DateLastSaved TEXT)')
+            con.execute('CREATE TABLE Users (Id TEXT PRIMARY KEY, Username TEXT)')
+            con.executemany('INSERT INTO BaseItems VALUES (?,?,?,?,?,?,?,?)', rows)
+            con.executemany('INSERT INTO Users VALUES (?,?)', [(u, u) for u in users])
+            con.commit()
+        finally:
+            con.close()
+        if device:
+            with open(os.path.join(base, 'device.txt'), 'w', encoding='utf-8') as f:
+                f.write(device)
+        return path
+
+    def test_added_removed_changed_and_json(self):
+        a = self.make_db('a', [
+            self.row('id1', 'Movie A', '{"b":2,"a":1}'),
+            self.row('id2', 'Movie B'),
+            self.row('id3', 'Movie C'),
+        ])
+        b = self.make_db('b', [
+            self.row('id1', 'Movie A edited', '{"a":1, "b":2}'),
+            self.row('id2', 'Movie B', ''),
+            self.row('id4', 'Movie D'),
+        ])
+        res = j.compare_databases(a, b, a_origin=a)
+        self.assertEqual(res['counts']['added'], 1)
+        self.assertEqual(res['counts']['removed'], 1)
+        self.assertEqual(res['counts']['changed'], 2)
+        self.assertEqual([x['id'] for x in res['added']], ['id4'])
+        self.assertEqual([x['id'] for x in res['removed']], ['id3'])
+        changed = {x['id']: x for x in res['changed']}
+        self.assertEqual([f['name'] for f in changed['id1']['fields']], ['Name'])
+        self.assertEqual([f['name'] for f in changed['id2']['fields']], ['Data'])
+        data_field = changed['id2']['fields'][0]
+        self.assertTrue(data_field['a_null'])
+        self.assertFalse(data_field['b_null'])
+        self.assertEqual(data_field['b'], '')
+        self.assertEqual(res['instance']['verdict'], 'same')
+        self.assertFalse(res['schema']['mismatch'])
+
+    def test_technical_columns_are_optional(self):
+        a = self.make_db('a', [self.row('id1', 'Movie A', saved='old')])
+        b = self.make_db('b', [self.row('id1', 'Movie A', saved='new')])
+        res = j.compare_databases(a, b, a_origin=a)
+        self.assertEqual(res['counts']['changed'], 0)
+        res = j.compare_databases(a, b, a_origin=a, include_technical=True)
+        self.assertEqual(res['counts']['changed'], 1)
+        self.assertEqual(res['changed'][0]['fields'][0]['name'], 'DateLastSaved')
+
+    def test_device_txt_detects_different_instance(self):
+        a = self.make_db('a', [self.row('id1', 'Movie A')], device='a' * 32)
+        b = self.make_db('b', [self.row('id1', 'Movie A')], device='b' * 32)
+        inst = j.compare_databases(a, b, a_origin=a)['instance']
+        self.assertEqual(inst['verdict'], 'different')
+        self.assertEqual(inst['reason'], 'device')
+
+    def test_no_common_ids_is_different_instance(self):
+        a = self.make_db('a', [self.row('id1', 'Movie A'), self.row('id2', 'Movie B')])
+        b = self.make_db('b', [self.row('id8', 'Movie X'), self.row('id9', 'Movie Y')])
+        inst = j.compare_databases(a, b, a_origin=a)['instance']
+        self.assertEqual(inst['verdict'], 'different')
+        self.assertEqual(inst['reason'], 'ids')
+
+    def test_missing_baseitems_is_rejected(self):
+        base = os.path.join(self.tmp, 'empty')
+        os.makedirs(base)
+        path = os.path.join(base, 'jellyfin.db')
+        con = sqlite3.connect(path)
+        con.execute('CREATE TABLE Other (Id TEXT)')
+        con.commit()
+        con.close()
+        with self.assertRaises(ValueError):
+            j.compare_databases(path, path, a_origin=path)
 
 
 class HistoryLimitTests(unittest.TestCase):

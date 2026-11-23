@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 20 listopada 2026, **wersja 0.9.0** (tag `v0.9.0`).
+Stan na 23 listopada 2026, **wersja 1.0.0** (tag `v1.0.0`).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -205,6 +205,8 @@ Osobny przycisk **Backup kopii roboczej** w prawym panelu zapisuje aktualną kop
 
 **SQL (skrypt ręczny):** osobne okno z gotowym skryptem `sqlite3`, przyciskami Copy i **Download .sql**.
 
+**Porównaj:** okno między SQL i Językami porównuje obecną bazę z `.bak` lub innym `.db`. Pokazuje `+` wpisy tylko w B, `−` tylko w A i `~` zmienione; po kliknięciu wiersza widać starą/nową wartość każdego pola oraz diff JSON dla `Data`. Baner sprawdza, czy pliki pochodzą z tej samej instancji Jellyfina, używając `data/device.txt` i wspólnych GUIDów elementów/użytkowników. **Pokaż pola techniczne** włącza `DateLastSaved`/`DateLastRefreshed` i od razu powtarza porównanie.
+
 **Ładowanie:** cienki pasek u góry przy każdym zapytaniu, spinner w długich przyciskach, ekran „Wczytywanie bazy…" z **procentem** (pod wyszukiwarką) przy starcie i po zapisie setupu, oraz procentowy postęp przy „Odśwież z oryginału" (fazy: kopiowanie, przygotowanie kopii roboczej).
 
 **Ekran „Nie wczytano bazy":** przyciski ADMIN / ścieżka / plik z komputera / okno systemowe oraz **stała lista języków pod oknem** (PL/EN/DE/FR/ES/RU/IT/NL); przełącza cały interfejs i powód błędu (tłumaczony po stronie serwera wg `X-Lang`). Ikona **⏭** pomija ekran (menu i ustawienia zostają dostępne); przy ponownym odświeżeniu bez bazy ekran nie wraca do przeładowania strony.
@@ -372,4 +374,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Publiczna linia main używa **0.x.x**. Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Kolejna funkcja to `0.10.0`, a następna poprawka do tej linii to `0.9.1`.
+Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Publiczna linia main używa **1.0.x** od 1.0.0; wcześniejsze 0.x.x i historyczne wydania rozwojowe 1.x pozostają w `Wersje.md`. Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Bieżące wydanie to `1.0.0`.
