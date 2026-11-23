@@ -43,7 +43,7 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
   
 <img width="860" height="666" alt="image" src="https://github.com/user-attachments/assets/4001eedb-210d-4c04-8456-f574d2bb2257" />
 
-- There is compare tab where you can welp compare databases and changes, drop down list features all original session backups in /var/lib/jellyfin/data with .bak
+- **Compare** tab: compare databases and changes; the drop-down lists the original session backups (`*.bak`) from `/var/lib/jellyfin/data`
   
   <img width="948" height="733" alt="image" src="https://github.com/user-attachments/assets/06b40880-0f75-41b4-8dda-e1a42f63294b" />
 
@@ -70,7 +70,7 @@ python3 jf_browser.py
 
 Optional: `python3 jf_browser.py --db /path/to/jellyfin.db`. On first run, the setup wizard asks for a data folder and a database.
 
-or install .deb so you'll have native~ app
+or install the `.deb` for the native window
 
 ## Documentation
 
