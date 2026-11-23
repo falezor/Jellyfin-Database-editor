@@ -1,11 +1,12 @@
 # Jellyfin DB editor
 
+A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
+
 <img width="1649" height="898" alt="image" src="https://github.com/user-attachments/assets/d7cda185-fb97-42fd-a4cd-714484596766" />
 
 <img width="1655" height="901" alt="image" src="https://github.com/user-attachments/assets/25d13f14-5055-4dce-888c-9682308917d3" />
 
 
-A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs a small local server; the original database and media files stay untouched until you explicitly use **Upload** or **Revert**.
 
 ## Features
 
