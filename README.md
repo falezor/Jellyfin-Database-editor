@@ -13,6 +13,7 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
 - edit basic and advanced metadata (Data JSON, path, hierarchy) from a double-click dialog in the list or series tree,
 - **orphan cleaning for related tables** — preview sample rows, skip `UserData`, and ignore empty/zero-GUID references,
 <img width="400" height="83" alt="image" src="https://github.com/user-attachments/assets/46d880c8-e25a-4312-b18c-fdf36c181625" />
+
 - **change the program data folder from Settings** — moves history and backups with progress,
 - detect missing files, unmounted or detached disks, duplicates, orphaned items and orphaned rows in related tables,
 - safely delete items from a working copy, with protection for unavailable disks,
@@ -21,9 +22,11 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
 - save a separate working-copy backup from the right panel,
 - stop Jellyfin automatically before Upload/Restore/original backup, with an optional no-confirmation mode,
 <img width="448" height="324" alt="image" src="https://github.com/user-attachments/assets/c204bfae-206d-4918-86e6-bdf0b6cd893c" />
+
 - import/export SQL, export the full database as `.db`, and generate a manual SQL cleanup script,
 - **8 interface languages**, portable configuration, Linux and Windows support (macOS untested).
 <img width="860" height="666" alt="image" src="https://github.com/user-attachments/assets/4001eedb-210d-4c04-8456-f574d2bb2257" />
+
 
 ## Safety
 
