@@ -12,31 +12,39 @@ A local, browser-based viewer and cleaner for Jellyfin's `jellyfin.db`. It runs 
 
 - browse libraries, item types, series and movies, with search and per-disk filtering,
 - edit basic and advanced metadata (Data JSON, path, hierarchy) from a double-click dialog in the list or series tree,
+- 
   <img width="760" height="629" alt="image" src="https://github.com/user-attachments/assets/feee6aca-7439-40e4-ae2d-d0e7a25b5f05" />
+  
   <img width="754" height="770" alt="image" src="https://github.com/user-attachments/assets/723020a4-35b2-4116-b1d0-b221bc8a72c6" />
 
 
 - **orphan cleaning for related tables** — preview sample rows, skip `UserData`, and ignore empty/zero-GUID references,
+  
 <img width="400" height="83" alt="image" src="https://github.com/user-attachments/assets/46d880c8-e25a-4312-b18c-fdf36c181625" />
 
 - **change the program data folder from Settings** — moves history and backups with progress,
 - detect missing files, unmounted or detached disks, duplicates, orphaned items and orphaned rows in related tables,
 - safely delete items from a working copy, with protection for unavailable disks,
 - **Upload** and **Revert** with a backup, version history and schema validation,
+  
   <img width="675" height="300" alt="image" src="https://github.com/user-attachments/assets/d6df1a98-b39e-4e10-b092-76fefc557477" />
 
 - restore manual backups with the same safeguards as Upload,
 - save a separate working-copy backup from the right panel,
 - stop Jellyfin automatically before Upload/Restore/original backup, with an optional no-confirmation mode,
+  
 <img width="448" height="324" alt="image" src="https://github.com/user-attachments/assets/c204bfae-206d-4918-86e6-bdf0b6cd893c" />
 
 - import/export SQL, export the full database as `.db`, and generate a manual SQL cleanup script,
+  
   <img width="451" height="212" alt="image" src="https://github.com/user-attachments/assets/64285f7e-215a-4a37-b3ca-3ac9e5171742" />
 
 - **8 interface languages**, portable configuration, Linux and Windows support (macOS untested).
+  
 <img width="860" height="666" alt="image" src="https://github.com/user-attachments/assets/4001eedb-210d-4c04-8456-f574d2bb2257" />
 
 - There is compare tab where you can welp compare databases and changes, drop down list features all original session backups in /var/lib/jellyfin/data with .bak
+  
   <img width="948" height="733" alt="image" src="https://github.com/user-attachments/assets/06b40880-0f75-41b4-8dda-e1a42f63294b" />
 
 
