@@ -1,13 +1,13 @@
-# Jellyfin DB editor — functional documentation
+# Jellyfin DB Editor — functional documentation
 
-**Version:** 1.0.0 (2026-11-23)  
+**Version:** 1.0.1 (2026-11-24)
 This document describes the program from the user's point of view. It is updated with every release. Changelog: [`Versions.md`](Versions.md) (Polish source: [`Wersje.md`](Wersje.md)). Polish extensive documentation: [`README-extensivePL.md`](README-extensivePL.md).
 
 ---
 
 ## 1. What the program does
 
-Jellyfin DB editor is a local viewer and cleaner for the `jellyfin.db` SQLite database. It runs on your computer or server, and the interface opens in a browser at `http://127.0.0.1:8099`.
+Jellyfin DB Editor is a local viewer and cleaner for the `jellyfin.db` SQLite database. It runs on your computer or server, and the interface opens in a browser at `http://127.0.0.1:8099`.
 
 It is intended for:
 
@@ -89,7 +89,11 @@ The program still asks for confirmation before Upload if Jellyfin is running.
 python jf_browser.py
 ```
 
-or launch the script/EXE. The interface opens in the browser; if it does not open automatically, use the address printed in the console.
+or launch the script/EXE. The Windows EXE opens the interface in a native
+WebView2 window when the runtime is available; otherwise it opens the default
+browser and a small control window. Closing either window stops the local
+server. If the interface does not open automatically, use the address printed
+in the console/log.
 
 ### Selecting a database
 
@@ -148,7 +152,7 @@ Other leftover temporary files (`jfdb_*`, `jfup_*`, `jfexp_*`, `import_*`) are r
 
 ### Top bar
 
-`Jellyfin DB editor` · **Settings** · **Connection** · **History** · **SQL** · **Languages ▾** · 🛠 **Setup**
+`Jellyfin DB Editor` · **Settings** · **Connection** · **History** · **SQL** · **Languages ▾** · 🛠 **Setup**
 
 - **Languages** — switches the interface language immediately; the choice is stored in `localStorage`.
 - **🛠 Setup** — reopens the data-folder and database configuration; it can be cancelled.
@@ -324,7 +328,7 @@ Upload is disabled for a database loaded “from the computer” (export-only mo
 
 The **Backup** button in the History window creates a full copy of the **live original database** (including `-wal`/`-shm`) in `<data_dir>/backups/`. In upload mode, where there is no original path, it snapshots the working copy instead. Backups are outside the history limit and show differences against the current working copy (`+` in the backup / `-` in the database). Each entry has **Restore** (replace the original with this backup) and a trash button. Jellyfin **must be stopped** for an original backup — the program stops it first and offers to start it again afterwards (or restarts it automatically when the Connection option is enabled).
 
-The separate **Back up working copy** button in the right panel saves the current working copy (including edits and deletions) to `<data_dir>/backups/working-copy/`. It is disabled when there are no changes.
+The separate **Back up working copy** button in the right panel saves the current working copy (including edits and deletions) to `<data_dir>/backups/working-copy/`. It is disabled when there are no changes. Working-copy backups are also added to the **Manual backups** list (marked **Working copy**) and can be restored or deleted there. The History window shows both backup folders and has **Open backup folder** / **Open working-copy folder** buttons, so the location is visible instead of only being written to a short-lived message.
 
 Only one `.bak` is created per session (on the first Upload with backup enabled). Optional `bak_keep` keeps the N newest program-created `<database>-*.bak` files; default **10**, 0 = off, max 10. The current session `.bak` is protected. Manual backups in `backups/` are never touched by this cleanup.
 
@@ -406,7 +410,8 @@ The program exposes a local HTTP API used by the interface. GET endpoints and `/
 | `/api/revert` | POST | restore a history entry |
 | `/api/reload` | POST | discard changes |
 | `/api/history` | GET/POST | history and cleanup |
-| `/api/backup` / `/api/backups` | POST/GET | manual backups |
+| `/api/backup` / `/api/backups` | POST/GET | manual backups, including working-copy backups in the index |
+| `/api/openfolder` | POST | open the backup folder (`{working:true}` opens working-copy backups) |
 | `/api/settings` | POST | limits and data folder |
 | `/api/priv` | GET/POST | privilege mode |
 | `/api/service` | GET/POST | Jellyfin service |
@@ -443,8 +448,8 @@ The language can be changed in the top menu or on the “Database not loaded” 
 
 ## 17. Development and versioning
 
-- Current version: **1.0.0**.
-- Version scheme: `X` - main line / major change, `Y` - new features, `Z` - bugfixes or very small changes. The public main line uses **1.0.x** from 1.0.0; earlier 0.x.x and historical 1.x development releases remain in [`Versions.md`](Versions.md). The current release is `1.0.0`.
+- Current version: **1.0.1**.
+- Version scheme: `X` - main line / major change, `Y` - new features, `Z` - bugfixes or very small changes. The public main line uses **1.0.x** from 1.0.0; earlier 0.x.x and historical 1.x development releases remain in [`Versions.md`](Versions.md). The current release is `1.0.1`.
 - Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; changes are listed in [`Versions.md`](Versions.md).
 - Release ZIPs are lightweight: program, UI, README/license and changelogs; test databases, internal analysis and runtime data are excluded.
 - Build a release archive with `python scripts/build_release.py vX.Y.Z`.

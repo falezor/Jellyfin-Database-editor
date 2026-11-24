@@ -20,7 +20,7 @@ def included(path):
         return True
     if '/' not in path and path.endswith('.md'):
         return True
-    return path.startswith('ui/') and not path.endswith('/')
+    return (path.startswith('ui/') or path.startswith('windows/')) and not path.endswith('/')
 
 
 def zip_date(tag):

@@ -51,7 +51,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-APP_VERSION = '1.0.0'
+APP_VERSION = '1.0.1'
 
 IMG_TYPES = {0: 'Primary', 1: 'Art', 2: 'Backdrop', 3: 'Banner', 4: 'Logo', 5: 'Thumb',
              6: 'Disc', 7: 'Box', 8: 'Screenshot', 9: 'Menu', 10: 'Chapter',
@@ -84,6 +84,48 @@ DATA_DIR = app_dir()
 TMP_DIR = os.path.join(DATA_DIR, 'tmp')
 HISTORY_DIR = os.path.join(DATA_DIR, 'history')
 HISTORY_INDEX = os.path.join(HISTORY_DIR, 'index.json')
+
+
+def _default_log_path():
+    base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+    return os.path.join(base, 'JellyfinDBEditor', 'logs', 'app.log')
+
+
+def setup_streams():
+    """Windowed Windows builds have no console; keep print() working.
+
+    In a frozen windowed EXE stdout/stderr may be None. Redirect them to a
+    UTF-8 log file (or devnull) and force UTF-8 on streams inherited from a
+    console whose code page cannot encode Polish characters.
+    """
+    logf = os.environ.get('JF_LOG_FILE')
+    frozen = getattr(sys, 'frozen', False)
+    if not logf and frozen:
+        logf = _default_log_path()
+    sink = None
+    if logf and (frozen or sys.stdout is None or sys.stderr is None):
+        try:
+            os.makedirs(os.path.dirname(logf), exist_ok=True)
+            sink = open(logf, 'a', encoding='utf-8', buffering=1)
+        except OSError:
+            sink = None
+    if sink is None and (sys.stdout is None or sys.stderr is None):
+        try:
+            sink = open(os.devnull, 'w', encoding='utf-8')
+        except OSError:
+            sink = None
+    if sink is not None:
+        if logf or sys.stdout is None:
+            sys.stdout = sink
+        if logf or sys.stderr is None:
+            sys.stderr = sink
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except (AttributeError, OSError, ValueError):
+            pass
 
 
 def dialog_available():
@@ -218,7 +260,7 @@ def cleanup_stale_sessions(max_age=24 * 3600):
 LOCK = threading.Lock()
 NODB_OK = ('/', '/api/info', '/api/priv', '/api/jellyfin', '/api/service', '/api/open', '/api/load', '/api/reload',
            '/api/pick', '/api/history', '/api/settings', '/api/setup', '/api/pickdir', '/api/import-sql', '/api/sqljob',
-           '/api/job', '/api/backups', '/api/pickpath')
+           '/api/job', '/api/backups', '/api/pickpath', '/api/openfolder')
 
 from i18n import LANGS, LANG_NAMES, TEXT, tr, status_short, status_long, reason_text, set_lang
 
@@ -3289,6 +3331,81 @@ def backups_save(recs):
     os.replace(tmp, p)
 
 
+def backup_record_folder(rec):
+    """Folder for a backup record; only known locations are accepted."""
+    if str((rec or {}).get('folder') or '') == 'working-copy':
+        return working_backups_dir()
+    return backups_dir()
+
+
+def backup_record_path(rec):
+    """Absolute path of a backup record, with the filename kept as a basename."""
+    name = os.path.basename(str((rec or {}).get('file') or ''))
+    return os.path.join(backup_record_folder(rec), name) if name else ''
+
+
+def backups_sync_working(recs=None):
+    """Add working-copy files created by older builds to the backup index."""
+    recs = list(recs if recs is not None else backups_load())
+    known = {(str(r.get('folder') or ''), os.path.basename(str(r.get('file') or '')))
+             for r in recs}
+    ids = {str(r.get('id') or '') for r in recs}
+    changed = False
+    try:
+        entries = list(os.scandir(working_backups_dir()))
+    except OSError:
+        entries = []
+    for entry in entries:
+        try:
+            if not entry.is_file() or not entry.name.lower().endswith('.db'):
+                continue
+            if ('working-copy', entry.name) in known:
+                continue
+            st = entry.stat()
+        except OSError:
+            continue
+        ts = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(st.st_mtime))
+        base = 'working-' + time.strftime('%Y%m%d-%H%M%S', time.localtime(st.st_mtime))
+        rid = base
+        n = 1
+        while rid in ids:
+            n += 1
+            rid = f'{base}-{n}'
+        recs.append({'id': rid, 'ts': ts, 'ver': '', 'source': 'working',
+                     'size': st.st_size, 'file': entry.name, 'folder': 'working-copy'})
+        ids.add(rid)
+        known.add(('working-copy', entry.name))
+        changed = True
+    if changed:
+        recs.sort(key=lambda r: str(r.get('ts') or ''), reverse=True)
+        backups_save(recs)
+    return recs
+
+
+def open_folder(path):
+    """Open a folder in the desktop file manager (best effort)."""
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        raise ValueError(tr('e_dir_missing'))
+    try:
+        if os.name == 'nt':
+            os.startfile(path)
+            return
+        if sys.platform == 'darwin':
+            cmd = ['open', path]
+        else:
+            if not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+                raise RuntimeError(tr('e_open_folder_unavailable'))
+            opener = shutil.which('xdg-open')
+            if not opener:
+                raise RuntimeError(tr('e_open_folder_unavailable'))
+            cmd = [opener, path]
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as exc:
+        raise RuntimeError(tr('e_open_folder_failed', err=str(exc)))
+
+
 def last_known_jf_version():
     v = str(SETTINGS.get('jf_version') or '').strip()
     if v:
@@ -3310,14 +3427,17 @@ def api_backup(body):
         ensure_jf_stopped()
     ver = str(body.get('ver') or last_known_jf_version() or '').strip()
     stamp = time.strftime('%Y-%m-%d_%H-%M-%S')
-    rid = time.strftime('%Y%m%d-%H%M%S')
+    base_rid = time.strftime('%Y%m%d-%H%M%S')
+    rid = base_rid
+    existing = backups_sync_working()
+    existing_ids = {str(r.get('id') or '') for r in existing}
     folder = working_backups_dir() if working else backups_dir()
     path = os.path.join(folder, f'jellyfin-{stamp}.db')
     n = 1
-    while os.path.exists(path):
+    while os.path.exists(path) or rid in existing_ids:
         n += 1
         path = os.path.join(folder, f'jellyfin-{stamp}-{n}.db')
-        rid = time.strftime('%Y%m%d-%H%M%S') + '-' + str(n)
+        rid = f'{base_rid}-{n}'
     if working:
         with LOCK:
             job_set('backup', 0, 1)
@@ -3331,8 +3451,10 @@ def api_backup(body):
         job_set('done', 1, 1)
         rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
                'ver': ver, 'source': 'working',
-               'size': os.path.getsize(path), 'file': os.path.basename(path)}
-        return {'ok': True, 'path': path, **rec}
+               'size': os.path.getsize(path), 'file': os.path.basename(path),
+               'folder': 'working-copy'}
+        backups_save([rec] + existing)
+        return {'ok': True, 'path': path, 'dir': folder, **rec}
     source = 'working'
     with LOCK:
         job_set('backup', 0, 1)
@@ -3374,21 +3496,26 @@ def api_backup(body):
     rec = {'id': rid, 'ts': time.strftime('%Y-%m-%d %H:%M:%S'),
            'ver': ver, 'source': source,
            'size': os.path.getsize(path), 'file': os.path.basename(path)}
-    backups_save([rec] + backups_load())
-    return {'ok': True, 'path': path, **rec}
+    backups_save([rec] + existing)
+    return {'ok': True, 'path': path, 'dir': folder, **rec}
 
 
 def api_backups(params):
-    recs = backups_load()
+    recs = backups_sync_working()
     rid = params.get('id', [''])[0]
+
+    def public(rec):
+        path = backup_record_path(rec)
+        return {**rec, 'path': path, 'exists': bool(path and os.path.exists(path))}
+
     if not rid:
-        return {'records': [{**r, 'exists': os.path.exists(os.path.join(backups_dir(), r.get('file') or ''))}
-                            for r in recs]}
+        return {'dir': backups_dir(), 'working_dir': working_backups_dir(),
+                'records': [public(r) for r in recs]}
     rec = next((r for r in recs if r.get('id') == rid), None)
     if not rec:
         raise ValueError(tr('e_backup_missing'))
-    path = os.path.join(backups_dir(), rec.get('file') or '')
-    if not os.path.exists(path):
+    path = backup_record_path(rec)
+    if not path or not os.path.exists(path):
         raise ValueError(tr('e_backup_file_missing'))
     if STATE['con'] is None:
         raise ValueError(tr('e_no_db'))
@@ -3396,7 +3523,7 @@ def api_backups(params):
     cur_ids = work_ids()
     in_backup = sorted(b_ids - cur_ids)
     in_cur = sorted(cur_ids - b_ids)
-    out = dict(rec)
+    out = public(rec)
     out['items_backup'] = db_rows(path, in_backup)[:1000]
     out['items_current'] = db_rows(STATE['work'], in_cur)[:1000]
     out['added'] = len(in_backup)
@@ -3408,12 +3535,12 @@ def api_backups_post(body):
     body = body or {}
     action = body.get('action')
     rid = body.get('id')
-    recs = backups_load()
+    recs = backups_sync_working()
     if action == 'delete':
         rec = next((r for r in recs if r.get('id') == rid), None)
         if not rec:
             raise ValueError(tr('e_backup_missing'))
-        path = os.path.join(backups_dir(), rec.get('file') or '')
+        path = backup_record_path(rec)
         try:
             os.remove(path)
         except OSError:
@@ -3424,12 +3551,19 @@ def api_backups_post(body):
         rec = next((r for r in recs if r.get('id') == rid), None)
         if not rec:
             raise ValueError(tr('e_backup_missing'))
-        path = os.path.join(backups_dir(), rec.get('file') or '')
-        if not os.path.exists(path):
+        path = backup_record_path(rec)
+        if not path or not os.path.exists(path):
             raise ValueError(tr('e_backup_file_missing'))
         backup = revert_database(path, bool(body.get('force_schema')), bool(body.get('backup')))
         return {'ok': True, 'id': rid, 'backup': backup}
     raise ValueError(tr('e_unknown_action'))
+
+
+def api_open_folder(body):
+    body = body or {}
+    folder = working_backups_dir() if body.get('working') else backups_dir()
+    open_folder(folder)
+    return {'ok': True, 'path': folder}
 
 
 def api_job():
@@ -3891,7 +4025,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path not in ('/api/delete', '/api/upload', '/api/reload', '/api/open', '/api/load', '/api/jellyfin',
                               '/api/priv', '/api/service', '/api/pick', '/api/settings', '/api/history', '/api/revert',
                               '/api/setup', '/api/pickdir', '/api/import-sql', '/api/backup', '/api/backups', '/api/pickpath',
-                              '/api/export', '/api/export-sql', '/api/orphans', '/api/edit', '/api/bak', '/api/compare'):
+                              '/api/openfolder', '/api/export', '/api/export-sql', '/api/orphans', '/api/edit',
+                              '/api/bak', '/api/compare'):
                 self.send_error(404)
                 return
             if u.path in ('/api/export', '/api/export-sql'):
@@ -3968,6 +4103,8 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == '/api/pick':
                 with LOCK:
                     self.send_json(api_pick())
+            elif u.path == '/api/openfolder':
+                self.send_json(api_open_folder(body))
             elif u.path == '/api/settings':
                 self.send_json(api_settings(body))
             elif u.path == '/api/bak':
@@ -4148,8 +4285,87 @@ def _gui_subprocess_flags():
     return {'creationflags': 0x08000000} if os.name == 'nt' else {}
 
 
+def _tk_pick_dialog(kind):
+    """Okno Tk w wątku głównym procesu-pomocnika (działa też w zamrożonym EXE)."""
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes('-topmost', True)
+    except Exception:
+        pass
+    try:
+        if kind == 'dir':
+            return filedialog.askdirectory(parent=root, title='Folder danych') or ''
+        return filedialog.askopenfilename(
+            parent=root, title='jellyfin.db',
+            filetypes=[('SQLite / Jellyfin', '*.db'),
+                       ('Jellyfin backup', '*.bak'), ('*', '*')]) or ''
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+
+def _write_pick_result(result):
+    path = os.environ.get('JF_PICK_OUT')
+    if not path:
+        return
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(result)
+    except OSError:
+        pass
+
+
+def run_pick_dialog(kind):
+    """Punkt wejścia procesu-pomocnika wyboru pliku/folderu."""
+    try:
+        result = _tk_pick_dialog(kind) or ''
+    except Exception:
+        result = '__NOGUI__'
+    _write_pick_result(result)
+    print(result, flush=True)
+    return 0
+
+
+def _pick_subprocess(kind):
+    """Uruchamia wybór pliku w osobnym procesie (obsługuje zamrożony EXE)."""
+    frozen = bool(getattr(sys, 'frozen', False))
+    cmd = [sys.executable] + ([] if frozen else [os.path.abspath(__file__)])
+    cmd += ['--pick-dialog', kind]
+    fd, out = tempfile.mkstemp(prefix='jfpick_', suffix='.txt')
+    os.close(fd)
+    env = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8', JF_PICK_OUT=out)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=300, env=env,
+                           **_gui_subprocess_flags())
+        picked = ''
+        try:
+            with open(out, encoding='utf-8') as f:
+                picked = f.read().strip('\r\n')
+        except OSError:
+            lines = [x for x in (r.stdout or '').splitlines() if x.strip()]
+            picked = lines[-1] if lines else ''
+        if r.returncode != 0 or picked == '__NOGUI__':
+            raise RuntimeError(tr('e_tk_missing'))
+        return picked
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError(tr('e_tk_missing'))
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
 def pick_db_dialog():
     """Systemowe okno wyboru pliku (osobny proces, żeby nie blokować serwera)."""
+    if os.name == 'nt' or getattr(sys, 'frozen', False):
+        return _pick_subprocess('db')
     try:
         r = subprocess.run([sys.executable, '-c', PICK_CODE], capture_output=True, text=True,
                            timeout=300, **_gui_subprocess_flags())
@@ -4189,6 +4405,8 @@ print(p or '')
 
 
 def pick_dir_dialog():
+    if os.name == 'nt' or getattr(sys, 'frozen', False):
+        return _pick_subprocess('dir')
     try:
         r = subprocess.run([sys.executable, '-c', PICK_DIR_CODE], capture_output=True, text=True,
                            timeout=300, **_gui_subprocess_flags())
@@ -4210,6 +4428,20 @@ def api_pickdir():
 def open_ui(url):
     """Otwiera przeglądarkę GRAFICZNĄ przez xdg-open (nigdy tekstowej w3m/lynx - ta nie obsłuży interfejsu).
     Pod sudo uruchamia ją jako zwykły użytkownik. Gdy się nie da, tylko wypisuje adres."""
+    if os.name == 'nt':
+        try:
+            os.startfile(url)
+            return
+        except OSError:
+            pass
+        try:
+            import webbrowser
+            if webbrowser.open(url):
+                return
+        except Exception:
+            pass
+        print(f'Otwórz ręcznie w przeglądarce: {url}')
+        return
     disp, wayl = os.environ.get('DISPLAY'), os.environ.get('WAYLAND_DISPLAY')
     if not (disp or wayl) or not shutil.which('xdg-open'):
         print(f'Otwórz ręcznie w przeglądarce: {url}')
@@ -4290,7 +4522,9 @@ def _on_signal(signum, frame):
 
 
 def main():
+    setup_streams()
     ap = argparse.ArgumentParser()
+    ap.add_argument('--pick-dialog', choices=('db', 'dir'), help=argparse.SUPPRESS)
     ap.add_argument('--db', default=None,
                     help='ścieżka bazy (domyślnie: zapisana w configu lub automatycznie wykryta)')
     ap.add_argument('--host', default='127.0.0.1')
@@ -4301,6 +4535,8 @@ def main():
     ap.add_argument('--no-service-check', action='store_true',
                     help='nie blokuj Upload, gdy Jellyfin działa')
     a = ap.parse_args()
+    if a.pick_dialog:
+        return run_pick_dialog(a.pick_dialog)
     try:
         _loopback = ipaddress.ip_address(a.host).is_loopback
     except ValueError:
@@ -4340,7 +4576,8 @@ def main():
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _on_signal)
     srv = None
-    for port in range(a.port, a.port + 10):
+    ports = [0] if a.port == 0 else range(a.port, a.port + 10)
+    for port in ports:
         try:
             srv = ThreadingHTTPServer((a.host, port), Handler)
             break
@@ -4351,9 +4588,26 @@ def main():
     CFG['own_port'] = srv.server_address[1]
     CFG['own_host'] = a.host
     url = f'http://{a.host}:{srv.server_address[1]}'
+    url_file = os.environ.get('JF_URL_FILE')
+    if url_file:
+        try:
+            with open(url_file, 'w', encoding='utf-8') as f:
+                f.write(url)
+        except OSError:
+            pass
     print(f'Kopia bazy: {STATE["tmp"]}\nOtwórz: {url}  (Ctrl+C kończy)')
     if not a.no_browser:
         threading.Timer(0.8, lambda: open_ui(url)).start()
+    quit_file = os.environ.get('JF_QUIT_FILE')
+    if quit_file:
+        def _watch_quit():
+            while not os.path.exists(quit_file):
+                time.sleep(0.5)
+            try:
+                srv.shutdown()
+            except Exception:
+                pass
+        threading.Thread(target=_watch_quit, daemon=True).start()
     try:
         srv.serve_forever()
     except (KeyboardInterrupt, SystemExit):

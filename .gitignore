@@ -19,3 +19,10 @@ jf_browser.settings.json
 
 # katalog publikacji GitHub (osobne repo)
 github/
+
+# Windows build output
+windows/build/
+windows/dist/
+windows/version_info.txt
+windows/*.spec
+windows/webview2/

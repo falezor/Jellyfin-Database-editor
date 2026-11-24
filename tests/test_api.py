@@ -567,7 +567,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(info['dirty'], 0)
         status, backups = self.server.get('/api/backups')
         self.assertEqual(status, 200)
-        self.assertEqual(len(backups['records']), 1)
+        self.assertEqual(len(backups['records']), 2)
+        self.assertEqual(backups['dir'], os.path.join(self.server.data_dir, 'backups'))
+        self.assertEqual(backups['working_dir'],
+                         os.path.join(self.server.data_dir, 'backups', 'working-copy'))
+        by_folder = {r.get('folder') or '': r for r in backups['records']}
+        self.assertEqual(by_folder['']['id'], backup['id'])
+        self.assertEqual(by_folder['working-copy']['id'], working_backup['id'])
+        self.assertTrue(all(r['exists'] and os.path.isfile(r['path']) for r in backups['records']))
 
         old_data = self.server.data_dir
         new_data = os.path.join(self.server.tmp, 'data2')
@@ -592,11 +599,56 @@ class ApiTests(unittest.TestCase):
             new_data, 'history', history['records'][0]['file'])))
         status, backups = self.server.get('/api/backups')
         self.assertEqual(status, 200)
-        self.assertEqual(len(backups['records']), 1)
+        self.assertEqual(len(backups['records']), 2)
+        self.assertTrue(all(r['exists'] and os.path.isfile(r['path']) for r in backups['records']))
         status, info = self.server.get('/api/info')
         self.assertEqual(status, 200)
         self.assertFalse(info['nodb'])
         self.assertEqual(info['dirty'], 0)
+
+
+class BackupIndexApiTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix='jfbackupapi_')
+        cls.db = os.path.join(cls.tmp, 'jellyfin.db')
+        create_test_db(cls.db)
+        cls.server = Server(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.close()
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_working_backup_listed_and_deletable(self):
+        status, wb = self.server.post('/api/backup', {'working': True})
+        self.assertEqual(status, 200, wb)
+        self.assertEqual(wb['source'], 'working')
+        self.assertEqual(wb['folder'], 'working-copy')
+        status, listing = self.server.get('/api/backups')
+        self.assertEqual(status, 200, listing)
+        rec = next(r for r in listing['records'] if r['id'] == wb['id'])
+        self.assertEqual(rec['folder'], 'working-copy')
+        self.assertEqual(rec['path'], wb['path'])
+        self.assertTrue(rec['exists'])
+        status, deleted = self.server.post('/api/backups', {'action': 'delete', 'id': wb['id']})
+        self.assertEqual(status, 200, deleted)
+        self.assertFalse(os.path.exists(wb['path']))
+        status, listing = self.server.get('/api/backups')
+        self.assertFalse(any(r['id'] == wb['id'] for r in listing['records']))
+
+    def test_legacy_working_file_is_imported(self):
+        folder = os.path.join(self.server.data_dir, 'backups', 'working-copy')
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, 'legacy.db')
+        with open(path, 'wb') as f:
+            f.write(b'legacy')
+        status, listing = self.server.get('/api/backups')
+        self.assertEqual(status, 200, listing)
+        rec = next(r for r in listing['records'] if r['file'] == 'legacy.db')
+        self.assertEqual(rec['folder'], 'working-copy')
+        self.assertTrue(rec['exists'])
 
 
 class AdvancedEditTests(unittest.TestCase):

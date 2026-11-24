@@ -1,6 +1,6 @@
 # jf_browser — dokumentacja projektu
 
-Stan na 23 listopada 2026, **wersja 1.0.0** (tag `v1.0.0`).
+Stan na 24 listopada 2026, **wersja 1.0.1** (lokalne repo git).
 
 Program składa się z trzech plików, które muszą leżeć razem:
 
@@ -42,6 +42,8 @@ Bez uprawnień do bazy program startuje mimo to (ekran konfiguracji/„Nie wczyt
 **Platformy:** tryb ADMIN (sudo) dotyczy Linuksa i jest tam opcjonalny. **Windows** nie używa sudo — program działa od razu jako LIMITED, przycisk ADMIN jest wyłączony z podpowiedzią, a serwer odrzuca włączenie trybu (`400`). Uprawnienia wynikają z konta użytkownika; pliki w `ProgramData` mogą wymagać odpowiednich praw. **macOS** nie był testowany.
 
 **Windows — różnice:** systemowe okno wyboru pliku nie wymaga sudo (osobny proces Tk z ukrytą konsolą), „Wczytaj bazę z innej ścieżki" otwiera okno w aplikacji (Enter = OK, Esc = anuluj), a anulowanie wyboru pliku nie blokuje interfejsu. Domyślna propozycja ścieżki jest dobierana wg systemu (`C:\...` na Windows, `/...` na Linuksie), a nie z bieżącego wpisu. Ścieżka w formacie innego systemu (np. `/var/...` na Windows) jest odrzucana czytelnym komunikatem zamiast próby otwarcia ścieżki względnej; dotyczy to także `--db` — taka ścieżka jest pomijana i używana jest domyślna platformy. Komunikaty o braku bazy pokazują więc ścieżkę w formacie bieżącego systemu. Domyślne bazy: `%ProgramData%\Jellyfin\Server\data\jellyfin.db` i `%LOCALAPPDATA%\jellyfin\data\jellyfin.db`. Sterowanie usługą Jellyfina (`systemctl`) jest niedostępne — przyciski start/stop pozostają wyłączone.
+
+**Windows EXE:** paczka `..._windows` otwiera interfejs w natywnym oknie WebView2, gdy runtime jest dostępny; bez WebView2/pywebview uruchamia przeglądarkę i małe okno sterowania. Zamknięcie okna zatrzymuje lokalny serwer.
 
 ### Flagi
 
@@ -130,7 +132,7 @@ Stan: `con` (połączenie z `work.db`), `src`, `orig`, `work`, `tmp`, `dirty`, `
 Dostęp do bazy chroni `LOCK`; połączenie w `isolation_level=None`.
 Baza ładuje się **w tle po starcie serwera**; `/api/info` zwraca `loading: true/false`, UI pokazuje „Wczytywanie bazy…" i sam przechodzi dalej.
 Biblioteki i filtry korzystają z CTE/`IN` — nie ma tabel tymczasowych `_libfolders`/`_roots`.
-Brak wczytanej bazy → `409 {nodb:true}` (poza trasami `/`, `/api/info`, `/api/priv`, `/api/jellyfin`, `/api/service`, `/api/open`, `/api/load`, `/api/reload`, `/api/pick`, `/api/history`, `/api/settings`, `/api/setup`, `/api/pickdir`, `/api/import-sql`, `/api/sqljob`, `/api/job`, `/api/backups`, `/api/pickpath`).
+Brak wczytanej bazy → `409 {nodb:true}` (poza trasami `/`, `/api/info`, `/api/priv`, `/api/jellyfin`, `/api/service`, `/api/open`, `/api/load`, `/api/reload`, `/api/pick`, `/api/history`, `/api/settings`, `/api/setup`, `/api/pickdir`, `/api/import-sql`, `/api/sqljob`, `/api/job`, `/api/backups`, `/api/pickpath`, `/api/openfolder`).
 
 ## 6. Wykrywanie bibliotek, dysków i problemów
 
@@ -183,7 +185,7 @@ Trzystanowe istnienie pliku: `True` / `False` / `None` (brak uprawnień). `None`
 
 ## 7. Interfejs
 
-**Menu górne:** `Jellyfin DB editor` · Ustawienia · Połączenie · Historia · SQL · Języki ▾ (przełączanie na żywo, zapamiętywane w `localStorage`; przy pierwszym uruchomieniu język z przeglądarki) · 🛠 **Setup** — ponowne otwarcie konfiguracji (folder danych + baza `jellyfin.db`), z możliwością anulowania; przydatne, gdy ścieżki zostały źle ustawione. W prawym górnym rogu stale widoczne są oznaczenie języka i wersja programu; mała plakietka **USER / SUDO / ADMIN / ROOT** pokazuje aktywny tryb uprawnień i pojawia się na lewo od nich, nie przesuwając języka ani wersji. Na Windows `ADMIN` tylko przy procesie uruchomionym z podniesionymi uprawnieniami (UAC), na Linuksie `SUDO` po aktywacji trybu ADMIN, na macOS `ADMIN` dla członka grupy admin lub `SUDO` przy aktywnej sesji; przy nieznanej platformie plakietka jest ukryta.
+**Menu górne:** `Jellyfin DB Editor` · Ustawienia · Połączenie · Historia · SQL · Języki ▾ (przełączanie na żywo, zapamiętywane w `localStorage`; przy pierwszym uruchomieniu język z przeglądarki) · 🛠 **Setup** — ponowne otwarcie konfiguracji (folder danych + baza `jellyfin.db`), z możliwością anulowania; przydatne, gdy ścieżki zostały źle ustawione. W prawym górnym rogu stale widoczne są oznaczenie języka i wersja programu; mała plakietka **USER / SUDO / ADMIN / ROOT** pokazuje aktywny tryb uprawnień i pojawia się na lewo od nich, nie przesuwając języka ani wersji. Na Windows `ADMIN` tylko przy procesie uruchomionym z podniesionymi uprawnieniami (UAC), na Linuksie `SUDO` po aktywacji trybu ADMIN, na macOS `ADMIN` dla członka grupy admin lub `SUDO` przy aktywnej sesji; przy nieznanej platformie plakietka jest ukryta.
 
 **Lewy panel:** kategoria (biblioteki lub typy + kategorie ostrzegawcze), sortowanie, „Wszystkie problemy", wyszukiwanie, chip filtra dysku (`Disk: … ✕`), lista pozycji (miniatura, nazwa, ścieżka, powody), przycisk **Pokaż więcej** (gdy wyników jest więcej niż pobrane 2000; kolejne porcje po 2000, bez górnego limitu — do końca wyników), na dole przycisk **Upload** (ikona ⬆ + pogrubione „Upload" + mniejszy opis).
 
@@ -199,7 +201,7 @@ Trzystanowe istnienie pliku: `True` / `False` / `None` (brak uprawnień). `None`
 - **automatyczne** — wpisy z Uploadów (wersja, data, `−N +M`, `⚠ brak pliku`), rozwijane szczegóły, **Restore**;
 - **Ręczne kopie** (na dole, przycisk **Backup**) — pełne kopie w `<data_dir>/backups/`, poza limitem historii; wpis pokazuje wersję, datę i rozmiar, a po rozwinięciu **różnice względem aktualnie wczytanej bazy**: `+N` (w kopii, brak w bazie) na zielono i `−N` (w bazie, brak w kopii) na czerwono — z listą pozycji. Backup pokazuje **postęp procentowy**. Każdy wpis ma **Przywróć** (podmiana oryginału tą kopią, z tymi samymi zabezpieczeniami co Upload: usługa, uprawnienia, schemat, `quick_check`) oraz **kosz** (usunięcie pojedynczej kopii z potwierdzeniem). Backup kopiuje **żywy oryginał** bazy (wraz z `-wal`/`-shm`); w trybie upload, gdzie nie ma ścieżki oryginału, kopiuje kopię roboczą. Przed backupem oryginału Jellyfin **musi być zatrzymany** — program robi to sam i po zakończeniu proponuje ponowne uruchomienie (albo robi to automatycznie, gdy włączona jest powyższa opcja).
 
-Osobny przycisk **Backup kopii roboczej** w prawym panelu zapisuje aktualną kopię roboczą (z edycjami i usunięciami) w `<data_dir>/backups/working-copy/`. Jest wyszarzony, gdy nie ma zmian. „Wyczyść historię" w Ustawieniach usuwa **tylko automatyczną historię** — ręczne kopie zostają.
+Osobny przycisk **Backup kopii roboczej** w prawym panelu zapisuje aktualną kopię roboczą (z edycjami i usunięciami) w `<data_dir>/backups/working-copy/`. Jest wyszarzony, gdy nie ma zmian. Kopie robocze są teraz dopisywane do listy **Ręczne kopie** (oznaczone **Kopia robocza**) i można je przywracać lub usuwać tak jak pozostałe backupy. Okno Historii pokazuje oba foldery i przyciski **Otwórz folder backupów** / **Otwórz folder kopii roboczych**, więc lokalizacja jest widoczna na stałe, a nie tylko w krótkim komunikacie. „Wyczyść historię" w Ustawieniach usuwa **tylko automatyczną historię** — ręczne kopie zostają.
 
 **SQL:** osobne okno z importem dumpu (`.sql` / `.sql.gz`, strumieniowo, z paskiem postępu: przesyłanie → rozpakowanie → wykonywanie poleceń) oraz eksportem `.sql` i `.sql.gz`. Po imporcie baza jest traktowana jak plik z komputera (`kind=upload`) — Upload wyłączony, dostępny eksport SQL/.db.
 
@@ -286,8 +288,9 @@ GET-y `/api/*` i `/img` wymagają ciasteczka sesji ustawianego przez `/` (HttpOn
 | `/api/priv` | GET / POST | POST | tryb + `platform` + `label` (`user`/`sudo`/`admin`/`root`); `enable` (hasło), `disable`; Windows: `enable` → 400 |
 | `/api/service` | GET / POST | POST | usługa; `start`, `stop` |
 | `/api/history` | GET / POST | POST | lista (`id` = szczegóły); POST `{action:"clear"}` |
-| `/api/backup` | POST | tak | kopia żywego oryginału w `<data_dir>/backups/` + wpis metadanych (`ver`, `source`) |
-| `/api/backups` | GET / POST | POST | lista ręcznych kopii; `id` = różnice względem bieżącej bazy; POST `{action:"delete", id}` lub `{action:"revert", id, backup, force_schema}` |
+| `/api/backup` | POST | tak | kopia żywego oryginału w `<data_dir>/backups/` + wpis metadanych (`ver`, `source`); `working:true` zapisuje kopię roboczą i również dopisuje wpis do indeksu |
+| `/api/backups` | GET / POST | POST | lista ręcznych kopii (także kopii roboczych z `folder:"working-copy"`), `dir`/`working_dir`; `id` = różnice względem bieżącej bazy; POST `{action:"delete", id}` lub `{action:"revert", id, backup, force_schema}` |
+| `/api/openfolder` | POST | nie | otwiera folder backupów w menedżerze plików; `{working:true}` otwiera folder kopii roboczych |
 | `/api/job` | GET | – | postęp operacji (np. reload: fazy i bajty) |
 | `/api/sqljob` | GET | – | postęp importu SQL (faza, bajty) |
 | `/api/import-sql` | POST | tak | surowy dump SQL / `.sql.gz` (`X-Filename`) |
@@ -374,4 +377,4 @@ Wykonane na kopii bazy użytkownika (2 tabele) oraz w przeglądarce (Chromium w 
 
 ## 19. Wersjonowanie
 
-Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Publiczna linia main używa **1.0.x** od 1.0.0; wcześniejsze 0.x.x i historyczne wydania rozwojowe 1.x pozostają w `Wersje.md`. Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Bieżące wydanie to `1.0.0`.
+Schemat **X.Y.Z**: `X` — główna linia / duża zmiana, `Y` — dodanie funkcji, `Z` — poprawka lub bardzo mała zmiana (np. `0.7.1`). Publiczna linia main używa **1.0.x** od 1.0.0; wcześniejsze 0.x.x i historyczne wydania rozwojowe 1.x pozostają w `Wersje.md`. Każda zmiana = nowy commit i **nowy tag** `vX.Y.Z` (tagi są niezmienne; commity nigdy nie są usuwane; dokumentacja bez osobnego tagu). Każda wersja ma też **release GitHub z ZIP-em**. ZIP release zawiera program, UI, README/licencję i changelogi; bez testowych baz, analizy i danych runtime. Paczkę buduje `python scripts/build_release.py vX.Y.Z`. Bieżące wydanie to `1.0.1`.

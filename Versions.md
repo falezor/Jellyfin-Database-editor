@@ -1,4 +1,4 @@
-# Version history — Jellyfin DB editor
+# Version history — Jellyfin DB Editor
 
 English version history.
 
@@ -7,6 +7,14 @@ Every version has a `vX.Y.Z` tag and a GitHub release with a ZIP asset; tags are
 Release ZIPs contain the program, UI, README/license and changelogs — no `DB/`, internal analysis or runtime data.
 
 ## 1.0.x
+
+### 1.0.1 (2026-11-24)
+- **Backup visibility:** the History window shows the manual-backup and working-copy folders and has buttons to open them in the desktop file manager.
+- **Working-copy backups in the list:** backups made with **Back up working copy** now receive an index entry, appear under **Manual backups**, and can be compared, restored and deleted. Older unindexed working-copy files are imported automatically.
+- **Unique backup IDs:** backups created in the same second get distinct IDs and filenames across both backup folders.
+- **Branding and packaging:** the UI, window title, Windows metadata, README and `.deb` desktop entry consistently use **Jellyfin DB Editor**; technical executable/package names remain `jellyfin-db-editor`.
+- **Windows:** WebView2 detection uses the official runtime GUID; the combined x86/x64 installer and x64 portable package are included in the release. 32-bit Windows validation is still pending.
+- Tests: **52/52** source; updated `.deb` static/API/GUI suites and all packaging CI jobs pass.
 
 ### 1.0.0 (2026-11-23)
 - **Feature-complete 1.0 milestone:** no new user-facing functionality beyond 0.10.0; this release is the quality/version milestone for the stable line.

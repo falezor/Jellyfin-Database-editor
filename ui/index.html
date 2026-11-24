@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Jellyfin DB editor</title>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Jellyfin DB Editor</title>
 <script>
 try{
   var _theme=localStorage.getItem('jfb_theme')||'auto';
@@ -249,7 +249,7 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
 </style></head><body>
 <div id="busy"></div>
 <div id="topbar"><div id="menubar">
-  <span id="brand">Jellyfin DB editor</span>
+  <span id="brand">Jellyfin DB Editor</span>
   <button id="m_settings" data-i18n="menu_settings">Ustawienia</button>
   <button id="m_conn" data-i18n="menu_connection">Połączenie</button>
   <button id="m_history" data-i18n="menu_history">Historia</button>
@@ -378,8 +378,13 @@ details>summary{cursor:pointer;font-weight:500;padding:3px 0}
   <div id="hlist"></div>
   <hr style="width:100%;border:0;border-top:1px solid var(--b);margin:8px 0 4px">
   <div class="row2"><b class="secname" data-i18n="manual_title">Ręczne kopie</b><span id="bcount" class="hcount"></span></div>
+  <div id="bdirs" class="dstat" style="font-size:11px;white-space:pre-line;margin:2px 0 6px"></div>
   <div id="blist"></div>
-  <div class="row2"><button id="histbackup" class="hrev" data-i18n="backup_btn" data-i18n-title="backup_manual_note">Backup</button></div>
+  <div class="row2">
+    <button id="histbackup" class="hrev" data-i18n="backup_btn" data-i18n-title="backup_manual_note">Backup</button>
+    <button id="bopenroot" class="hrev" data-i18n="open_backup_folder" data-i18n-title="open_backup_folder_tip">Otwórz folder backupów</button>
+    <button id="bopenwork" class="hrev" data-i18n="open_working_folder" data-i18n-title="open_working_folder_tip">Otwórz folder kopii roboczych</button>
+  </div>
   <div id="bjobwrap"><div id="bjobbar"></div></div>
   <div id="bjobmsg" class="dstat" style="font-size:11px"></div>
   <div class="dstat" data-i18n="backup_manual_note" style="font-size:11px"></div>
@@ -878,15 +883,27 @@ function renderTree(){
   $('#tree').innerHTML=''; $('#tree').append(tb);
 }
 function updCnt(){$('#cnt').textContent=sel.size;if($('#gencnt'))$('#gencnt').textContent=sel.size;$('#del').disabled=sel.size===0}
+async function openBackupFolder(working){
+  const {ok,t:r}=await post('/api/openfolder',{working:!!working});
+  if(!ok)alert(t('e_open_folder_failed',{err:r.error||'error'}));
+}
 $('#backupwork').onclick=async()=>{
   if(!lastInfo||!lastInfo.dirty)return;
   $('#backupwork').classList.add('working');
   const {ok,t:r}=await post('/api/backup',{working:true,ver:(jfLast&&jfLast.info&&jfLast.info.Version)||''});
   $('#backupwork').classList.remove('working');
   if(!ok){alert(t('backup_work_failed',{err:r.error||'error'}));return}
-  const h=$('#hint'); const msg=t('backup_work_done',{path:r.path});
-  h.textContent=msg; h.classList.add('show');
-  setTimeout(()=>{if(h.textContent===msg)h.classList.remove('show')},7000);
+  try{
+    const d=await j('/api/backups');
+    renderBackups(d);
+    renderBackupDirs(d);
+  }catch(e){}
+  const choice=await askModal({
+    title:t('backup_work_saved_title'),
+    text:t('backup_work_done',{path:r.path}),
+    buttons:[{label:t('open_folder'),value:'open',primary:true},{label:t('close'),value:'close'}]
+  });
+  if(choice==='open')await openBackupFolder(true);
 };
 $('#selMiss').onclick=()=>{
   const all=$('#allDisks').checked;
@@ -1129,12 +1146,17 @@ $('#orphclean').onclick=async()=>{
 async function openHistory(){
   openWin('#win_history');
   $('#hcount').textContent=''; if($('#bcount'))$('#bcount').textContent='';
+  $('#bdirs').textContent='';
   $('#hmsg').textContent='';$('#hmsg').className='dstat';
   $('#hlist').textContent=t('loading');
   if($('#blist'))$('#blist').textContent=t('loading');
   try{ renderHistory(await j('/api/history')); }
   catch(e){ $('#hlist').textContent=t('history_err',{err:e.message||e}); }
-  try{ renderBackups(await j('/api/backups')); }
+  try{
+    const d=await j('/api/backups');
+    renderBackups(d);
+    renderBackupDirs(d);
+  }
   catch(e){ if($('#blist'))$('#blist').textContent=t('history_err',{err:e.message||e}); }
 }
 function renderHistory(d){
@@ -1183,6 +1205,7 @@ function renderBackups(d){
     head.append(el('span','hdate',r.ts||''));
     head.append(el('span','dstat',t('backup_size',{mb:Math.round((r.size||0)/1048576*10)/10})));
     if(r.source) head.append(el('span','dstat',t(r.source==='working'?'backup_source_working':'backup_source_original')));
+    if(r.path)head.title=r.path;
     const revBtn=el('button','hrev',t('revert'));
     revBtn.disabled=r.exists===false;
     revBtn.title=r.exists===false?t('e_backup_file_missing'):t('revert');
@@ -1226,6 +1249,17 @@ function renderBackups(d){
     box.append(rec);
   });
 }
+function renderBackupDirs(d){
+  const box=$('#bdirs'); if(!box)return;
+  const root=d.dir||'';
+  const work=d.working_dir||'';
+  box.textContent=t('backup_folder_line',{path:root})+'\n'+t('backup_working_folder_line',{path:work});
+  const b1=$('#bopenroot'), b2=$('#bopenwork');
+  if(b1)b1.title=root;
+  if(b2)b2.title=work;
+}
+$('#bopenroot').onclick=()=>openBackupFolder(false);
+$('#bopenwork').onclick=()=>openBackupFolder(true);
 $('#histbackup').onclick=async()=>{
   const stop=await stopJfForWrite(); if(!stop.ok)return;
   startJobPoll(); jobProg(true,0,t('job_backup',{p:0}));
@@ -1238,7 +1272,11 @@ $('#histbackup').onclick=async()=>{
     return;
   }
   m.textContent=t('backup_done',{path:r.path});
-  try{ renderBackups(await j('/api/backups')); }catch(e){}
+  try{
+    const d=await j('/api/backups');
+    renderBackups(d);
+    renderBackupDirs(d);
+  }catch(e){}
   await startJfAfter(t('backup_done',{path:r.path}),stop.stopped);
 };
 const fmtItem=it=>{
