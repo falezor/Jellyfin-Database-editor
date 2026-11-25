@@ -1,10 +1,5 @@
 # Historia wersji — Jellyfin DB Editor
 
-Schemat: **X.Y.Z** — `X` główna linia / duża zmiana, `Y` dodanie funkcji, `Z` poprawka lub bardzo mała zmiana.
-Każda wersja ma tag `vX.Y.Z` oraz release GitHub z ZIP-em; tagi są niezmienne, commity nie są usuwane.
-ZIP release zawiera program, UI, README/licencję i changelogi — bez `DB/`, `potencjalne poprawki` i danych runtime.
-English version: [`Versions.md`](Versions.md).
-
 ## 1.0.x
 
 ### 1.0.1 (2026-11-24)
